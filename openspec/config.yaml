@@ -1,0 +1,32 @@
+schema: spec-driven
+
+context: |
+  Project: Sistema Web para Gestão e Agendamento em Pet Shops.
+
+  Domain: Gerenciamento de tutores, pets, catálogo de serviços e agendamentos com histórico operacional centralizado.
+
+  Tech stack: Backend e Banco de Dados em Xano (XanoScript e Xano DB), VS Code, Git e GitHub.
+
+  Architecture: O sistema é limitado estritamente a 4 entidades funcionais (Tutor, Pet, Servico, Agendamento). Todas as validações, regras de negócio e integridade de dados devem ser implementadas exclusivamente no Backend (Xano).
+
+  Development: Desenvolvimento incremental e orientado a especificações utilizando o OpenSpec.
+
+  Language: Escrever todos os artefatos OpenSpec e documentações em português brasileiro.
+
+rules:
+  proposal:
+    - Descrever claramente o problema, objetivo e escopo.
+    - Garantir que a mudança respeite o limite estrito das 4 entidades do domínio.
+  specs:
+    - Escrever requisitos verificáveis e orientados a cenários.
+    - Detalhar validações de backend e cenários de erro.
+  tasks:
+    - Dividir a implementação em tarefas pequenas e facilmente verificáveis.
+
+operations:
+  apply:
+    guidance:
+      - Validar o comportamento do backend antes de marcar a tarefa como concluída.
+  archive:
+    guidance:
+      - Confirmar se a implementação corresponde exatamente à especificação aprovada.
