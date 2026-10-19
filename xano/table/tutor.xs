@@ -3,6 +3,9 @@ table tutor {
 
   schema {
     int id
+    text nome
+    text? email?
+    text? telefone?
     timestamp created_at?=now {
       visibility = "private"
     }
