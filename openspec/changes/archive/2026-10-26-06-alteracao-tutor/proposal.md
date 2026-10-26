@@ -10,7 +10,6 @@ O sistema permite cadastrar tutores, mas não oferece uma forma de corrigir os d
 - Permite alterar nome, e-mail e telefone, preservando o cadastro existente e os demais registros.
 - Valida no Xano o identificador, o nome, o e-mail opcional e a existência do tutor antes de atualizar.
 - Confirma a alteração no frontend somente quando a resposta do Xano contém o mesmo tutor e os dados enviados.
-- Mantém a exclusão fora desta mudança.
 
 ## Capacidades
 
@@ -24,7 +23,7 @@ O sistema permite cadastrar tutores, mas não oferece uma forma de corrigir os d
 
 ## Impacto
 
-- Xano: endpoint `PATCH /tutor/{tutor_id}` do grupo `Event Logs`.
+- Xano: endpoints `GET /tutor` e `PATCH /tutor/{tutor_id}` do grupo `Event Logs`.
 - Frontend: tela e estado de tutor em `Petech/Petech.py`.
 - OpenSpec: nova especificação de alteração de Tutor.
 - Não adiciona entidades ou tabelas e não altera Pet, Serviço ou Agendamento.

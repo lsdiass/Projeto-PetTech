@@ -108,6 +108,10 @@ class TutorState(rx.State):
     processando_edicao: bool = False
     mensagem_edicao: str = ""
     sucesso_edicao: bool = False
+    tutor_id_exclusao: str = ""
+    processando_exclusao: bool = False
+    mensagem_exclusao: str = ""
+    sucesso_exclusao: bool = False
 
     def set_nome(self, nome: str):
         self.nome = nome
@@ -238,6 +242,124 @@ class TutorState(rx.State):
         self.telefone_edicao = ""
         self.mensagem_edicao = ""
         self.sucesso_edicao = False
+
+    def iniciar_exclusao(self, tutor_id: str):
+        if self.processando_exclusao or self.processando_edicao:
+            return
+        if not any(tutor["id"] == tutor_id for tutor in self.tutores):
+            self.erro_lista = "Não foi possível localizar o tutor selecionado."
+            return
+        self.tutor_id_exclusao = tutor_id
+        self.mensagem_exclusao = ""
+        self.sucesso_exclusao = False
+
+    def cancelar_exclusao(self):
+        if self.processando_exclusao:
+            return
+        self.tutor_id_exclusao = ""
+        self.mensagem_exclusao = ""
+        self.sucesso_exclusao = False
+
+    def confirmar_exclusao(self):
+        tutor_id = normalizar_id(self.tutor_id_exclusao)
+        if tutor_id is None:
+            self.mensagem_exclusao = "Selecione um tutor válido para excluir."
+            self.sucesso_exclusao = False
+            return
+
+        self.processando_exclusao = True
+        self.mensagem_exclusao = "Excluindo tutor..."
+        self.sucesso_exclusao = False
+        try:
+            response = httpx.delete(
+                f"{XANO_API_URL}/tutor/{tutor_id}",
+                timeout=10.0,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.mensagem_exclusao = f"Erro ao excluir tutor: {err_msg}"
+        except httpx.RequestError as error:
+            self.mensagem_exclusao = (
+                f"Erro de conexão com o Xano: {error}"
+            )
+        else:
+            resultado = None
+            if response.content:
+                try:
+                    resultado = response.json()
+                except ValueError:
+                    resultado = None
+
+            exclusao_confirmada = (
+                isinstance(resultado, dict)
+                and normalizar_id(resultado.get("id")) == tutor_id
+                and resultado.get("deleted") is True
+            )
+            if not exclusao_confirmada:
+                try:
+                    verificacao = httpx.get(
+                        f"{XANO_API_URL}/tutor/{tutor_id}",
+                        timeout=10.0,
+                    )
+                    verificacao.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code == 404:
+                        exclusao_confirmada = True
+                    else:
+                        self.mensagem_exclusao = (
+                            "O Xano respondeu à exclusão, mas não foi possível "
+                            "verificar se o tutor foi removido."
+                        )
+                except httpx.RequestError as error:
+                    self.mensagem_exclusao = (
+                        "A solicitação de exclusão foi enviada, mas não foi "
+                        f"possível confirmar o resultado: {error}"
+                    )
+                else:
+                    self.mensagem_exclusao = (
+                        "O tutor ainda consta no Xano; a exclusão não foi "
+                        "confirmada."
+                    )
+
+            if not exclusao_confirmada:
+                if not self.mensagem_exclusao or (
+                    self.mensagem_exclusao == "Excluindo tutor..."
+                ):
+                    self.mensagem_exclusao = (
+                        "O Xano não confirmou a exclusão do tutor."
+                    )
+            else:
+                self.tutores = [
+                    tutor
+                    for tutor in self.tutores
+                    if tutor["id"] != tutor_id
+                ]
+                self.tem_tutores = bool(self.tutores)
+                self.erro_lista = (
+                    "" if self.tem_tutores else "Nenhum tutor cadastrado."
+                )
+                self.tutor_id_exclusao = ""
+                self.mensagem_exclusao = "Tutor excluído com sucesso."
+                self.sucesso_exclusao = True
+                if self.tutor_id_edicao == tutor_id:
+                    self.editando = False
+                    self.tutor_id_edicao = ""
+                    self.nome_edicao = ""
+                    self.email_edicao = ""
+                    self.telefone_edicao = ""
+                    self.mensagem_edicao = ""
+                    self.sucesso_edicao = False
+        finally:
+            self.processando_exclusao = False
 
     def salvar_edicao(self):
         tutor_id = normalizar_id(self.tutor_id_edicao)
@@ -614,10 +736,61 @@ def index() -> rx.Component:
                                     on_click=TutorState.iniciar_edicao(
                                         tutor["id"]
                                     ),
-                                    disabled=TutorState.processando_edicao,
+                                    disabled=(
+                                        TutorState.processando_edicao
+                                        | TutorState.processando_exclusao
+                                    ),
+                                ),
+                                rx.button(
+                                    "Excluir",
+                                    on_click=TutorState.iniciar_exclusao(
+                                        tutor["id"]
+                                    ),
+                                    disabled=(
+                                        TutorState.processando_edicao
+                                        | TutorState.processando_exclusao
+                                    ),
+                                    color_scheme="red",
+                                ),
+                                rx.cond(
+                                    TutorState.tutor_id_exclusao
+                                    == tutor["id"],
+                                    rx.vstack(
+                                        rx.text(
+                                            "Confirma a exclusão deste tutor? "
+                                            "A ação não poderá ser desfeita.",
+                                            color="red",
+                                            size="2",
+                                        ),
+                                        rx.hstack(
+                                            rx.button(
+                                                "Confirmar exclusão",
+                                                on_click=(
+                                                    TutorState.confirmar_exclusao
+                                                ),
+                                                loading=(
+                                                    TutorState.processando_exclusao
+                                                ),
+                                                color_scheme="red",
+                                            ),
+                                            rx.button(
+                                                "Cancelar",
+                                                on_click=(
+                                                    TutorState.cancelar_exclusao
+                                                ),
+                                                disabled=(
+                                                    TutorState.processando_exclusao
+                                                ),
+                                                variant="outline",
+                                            ),
+                                        ),
+                                        align="start",
+                                        width="100%",
+                                    ),
                                 ),
                                 justify="between",
                                 align="center",
+                                wrap="wrap",
                                 width="100%",
                                 padding="12px",
                                 border="1px solid #ddd",
@@ -628,6 +801,22 @@ def index() -> rx.Component:
                         max_width="600px",
                     ),
                     rx.text(TutorState.erro_lista),
+                ),
+            ),
+            rx.cond(
+                TutorState.mensagem_exclusao,
+                rx.text(
+                    TutorState.mensagem_exclusao,
+                    color=rx.cond(
+                        TutorState.sucesso_exclusao,
+                        "green",
+                        rx.cond(
+                            TutorState.processando_exclusao,
+                            "blue",
+                            "red",
+                        ),
+                    ),
+                    size="2",
                 ),
             ),
             spacing="5",
@@ -669,6 +858,10 @@ class PetState(rx.State):
     processando_edicao: bool = False
     mensagem_edicao: str = ""
     sucesso_edicao: bool = False
+    pet_id_exclusao: str = ""
+    processando_exclusao: bool = False
+    mensagem_exclusao: str = ""
+    sucesso_exclusao: bool = False
 
     @rx.event
     def carregar_tutores(self):
@@ -1012,6 +1205,138 @@ class PetState(rx.State):
                 )
         finally:
             self.processando_edicao = False
+
+    @rx.event
+    def iniciar_exclusao(self, pet_id: str):
+        if self.processando_edicao or self.processando_exclusao:
+            return
+        if not any(pet["id"] == pet_id for pet in self.pets):
+            self.erro_lista_pets = "Não foi possível localizar o pet selecionado."
+            return
+        self.pet_id_exclusao = pet_id
+        self.mensagem_exclusao = ""
+        self.sucesso_exclusao = False
+
+    @rx.event
+    def cancelar_exclusao(self):
+        if self.processando_exclusao:
+            return
+        self.pet_id_exclusao = ""
+        self.mensagem_exclusao = ""
+        self.sucesso_exclusao = False
+
+    @rx.event
+    def confirmar_exclusao(self):
+        pet_id = normalizar_id(self.pet_id_exclusao)
+        if pet_id is None:
+            self.mensagem_exclusao = "Selecione um pet válido para excluir."
+            self.sucesso_exclusao = False
+            return
+
+        self.processando_exclusao = True
+        self.mensagem_exclusao = "Excluindo pet..."
+        self.sucesso_exclusao = False
+        try:
+            response = httpx.delete(
+                f"{XANO_API_URL}/pet/{pet_id}",
+                timeout=10.0,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", "").strip()
+                if isinstance(err_data, dict)
+                and isinstance(err_data.get("message"), str)
+                else ""
+            )
+            if not err_msg:
+                err_msg = error.response.text.strip()
+            if not err_msg:
+                err_msg = f"Xano retornou HTTP {error.response.status_code}."
+            self.mensagem_exclusao = f"Erro ao excluir pet: {err_msg}"
+        except httpx.RequestError as error:
+            self.mensagem_exclusao = f"Erro de conexão com o Xano: {error}"
+        else:
+            resultado = None
+            if response.content:
+                try:
+                    resultado = response.json()
+                except ValueError:
+                    resultado = None
+
+            exclusao_confirmada = (
+                isinstance(resultado, dict)
+                and normalizar_id(resultado.get("id")) == pet_id
+                and resultado.get("deleted") is True
+            )
+            if not exclusao_confirmada:
+                try:
+                    verificacao = httpx.get(
+                        f"{XANO_API_URL}/pet/{pet_id}",
+                        timeout=10.0,
+                    )
+                    verificacao.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code == 404:
+                        exclusao_confirmada = True
+                    else:
+                        self.mensagem_exclusao = (
+                            "O Xano respondeu à exclusão, mas não foi possível "
+                            "verificar se o pet foi removido."
+                        )
+                except httpx.RequestError as error:
+                    self.mensagem_exclusao = (
+                        "A solicitação de exclusão foi enviada, mas não foi "
+                        f"possível confirmar o resultado: {error}"
+                    )
+                else:
+                    self.mensagem_exclusao = (
+                        "O pet ainda consta no Xano; a exclusão não foi "
+                        "confirmada."
+                    )
+
+            if not exclusao_confirmada:
+                if self.mensagem_exclusao == "Excluindo pet...":
+                    self.mensagem_exclusao = (
+                        "O Xano não confirmou a exclusão do pet."
+                    )
+            else:
+                self.pets = [
+                    pet for pet in self.pets if pet["id"] != pet_id
+                ]
+                self.tem_pets = bool(self.pets)
+                registros_incompletos = sum(
+                    pet["dados_incompletos"] == "true" for pet in self.pets
+                )
+                self.erro_lista_pets = (
+                    f"{registros_incompletos} pet(s) com dados obrigatórios "
+                    "incompletos. Use Editar para preencher os campos ausentes."
+                    if registros_incompletos
+                    else (
+                        "" if self.tem_pets else "Nenhum pet cadastrado."
+                    )
+                )
+                self.pet_id_exclusao = ""
+                self.mensagem_exclusao = "Pet excluído com sucesso."
+                self.sucesso_exclusao = True
+                if self.pet_id_edicao == pet_id:
+                    self.editando = False
+                    self.pet_id_edicao = ""
+                    self.tutor_id_edicao = ""
+                    self.tutor_selecionado_edicao = ""
+                    self.nome_edicao = ""
+                    self.especie_edicao = ""
+                    self.raca_edicao = ""
+                    self.porte_edicao = ""
+                    self.observacoes_saude_edicao = ""
+                    self.mensagem_edicao = ""
+                    self.sucesso_edicao = False
+        finally:
+            self.processando_exclusao = False
 
     @rx.event
     def set_tutor_selecionado(self, tutor_selecionado: str):
@@ -1392,10 +1717,59 @@ def cadastro_pet() -> rx.Component:
                                 rx.button(
                                     "Editar",
                                     on_click=PetState.iniciar_edicao(pet["id"]),
-                                    disabled=PetState.processando_edicao,
+                                    disabled=(
+                                        PetState.processando_edicao
+                                        | PetState.processando_exclusao
+                                    ),
+                                ),
+                                rx.button(
+                                    "Excluir",
+                                    on_click=PetState.iniciar_exclusao(pet["id"]),
+                                    disabled=(
+                                        PetState.processando_edicao
+                                        | PetState.processando_exclusao
+                                    ),
+                                    color_scheme="red",
+                                ),
+                                rx.cond(
+                                    PetState.pet_id_exclusao == pet["id"],
+                                    rx.vstack(
+                                        rx.text(
+                                            "Confirma a exclusão deste pet? "
+                                            "Agendamentos vinculados impedem "
+                                            "a exclusão.",
+                                            color="red",
+                                            size="2",
+                                        ),
+                                        rx.hstack(
+                                            rx.button(
+                                                "Confirmar exclusão",
+                                                on_click=(
+                                                    PetState.confirmar_exclusao
+                                                ),
+                                                loading=(
+                                                    PetState.processando_exclusao
+                                                ),
+                                                color_scheme="red",
+                                            ),
+                                            rx.button(
+                                                "Cancelar",
+                                                on_click=(
+                                                    PetState.cancelar_exclusao
+                                                ),
+                                                disabled=(
+                                                    PetState.processando_exclusao
+                                                ),
+                                                variant="outline",
+                                            ),
+                                        ),
+                                        align="start",
+                                        width="100%",
+                                    ),
                                 ),
                                 justify="between",
                                 align="center",
+                                wrap="wrap",
                                 width="100%",
                                 padding="12px",
                                 border="1px solid #ddd",
@@ -1406,6 +1780,22 @@ def cadastro_pet() -> rx.Component:
                         max_width="600px",
                     ),
                     rx.text(PetState.erro_lista_pets),
+                ),
+            ),
+            rx.cond(
+                PetState.mensagem_exclusao,
+                rx.text(
+                    PetState.mensagem_exclusao,
+                    color=rx.cond(
+                        PetState.sucesso_exclusao,
+                        "green",
+                        rx.cond(
+                            PetState.processando_exclusao,
+                            "blue",
+                            "red",
+                        ),
+                    ),
+                    size="2",
                 ),
             ),
             spacing="5",
@@ -1438,6 +1828,10 @@ class ServicoState(rx.State):
     processando_edicao: bool = False
     mensagem_edicao: str = ""
     sucesso_edicao: bool = False
+    servico_id_exclusao: str = ""
+    processando_exclusao: bool = False
+    mensagem_exclusao: str = ""
+    sucesso_exclusao: bool = False
 
     @rx.event
     def carregar_servicos(self):
@@ -1731,6 +2125,146 @@ class ServicoState(rx.State):
                 )
         finally:
             self.processando_edicao = False
+
+    @rx.event
+    def iniciar_exclusao(self, servico_id: str):
+        if self.processando_edicao or self.processando_exclusao:
+            return
+        if not any(
+            servico["id"] == servico_id for servico in self.servicos
+        ):
+            self.erro_lista_servicos = (
+                "Não foi possível localizar o serviço selecionado."
+            )
+            return
+        self.servico_id_exclusao = servico_id
+        self.mensagem_exclusao = ""
+        self.sucesso_exclusao = False
+
+    @rx.event
+    def cancelar_exclusao(self):
+        if self.processando_exclusao:
+            return
+        self.servico_id_exclusao = ""
+        self.mensagem_exclusao = ""
+        self.sucesso_exclusao = False
+
+    @rx.event
+    def confirmar_exclusao(self):
+        servico_id = normalizar_id(self.servico_id_exclusao)
+        if servico_id is None:
+            self.mensagem_exclusao = (
+                "Selecione um serviço válido para excluir."
+            )
+            self.sucesso_exclusao = False
+            return
+
+        self.processando_exclusao = True
+        self.mensagem_exclusao = "Excluindo serviço..."
+        self.sucesso_exclusao = False
+        try:
+            response = httpx.delete(
+                f"{XANO_API_URL}/servico/{servico_id}",
+                timeout=10.0,
+            )
+            response.raise_for_status()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", "").strip()
+                if isinstance(err_data, dict)
+                and isinstance(err_data.get("message"), str)
+                else ""
+            )
+            if not err_msg:
+                err_msg = error.response.text.strip()
+            if not err_msg:
+                err_msg = f"Xano retornou HTTP {error.response.status_code}."
+            self.mensagem_exclusao = (
+                f"Erro ao excluir serviço: {err_msg}"
+            )
+        except httpx.RequestError as error:
+            self.mensagem_exclusao = f"Erro de conexão com o Xano: {error}"
+        else:
+            resultado = None
+            if response.content:
+                try:
+                    resultado = response.json()
+                except ValueError:
+                    resultado = None
+
+            exclusao_confirmada = (
+                isinstance(resultado, dict)
+                and normalizar_id(resultado.get("id")) == servico_id
+                and resultado.get("deleted") is True
+            )
+            if not exclusao_confirmada:
+                try:
+                    verificacao = httpx.get(
+                        f"{XANO_API_URL}/servico/{servico_id}",
+                        timeout=10.0,
+                    )
+                    verificacao.raise_for_status()
+                except httpx.HTTPStatusError as error:
+                    if error.response.status_code == 404:
+                        exclusao_confirmada = True
+                    else:
+                        self.mensagem_exclusao = (
+                            "O Xano respondeu à exclusão, mas não foi possível "
+                            "verificar se o serviço foi removido."
+                        )
+                except httpx.RequestError as error:
+                    self.mensagem_exclusao = (
+                        "A solicitação de exclusão foi enviada, mas não foi "
+                        f"possível confirmar o resultado: {error}"
+                    )
+                else:
+                    self.mensagem_exclusao = (
+                        "O serviço ainda consta no Xano; a exclusão não foi "
+                        "confirmada."
+                    )
+
+            if not exclusao_confirmada:
+                if self.mensagem_exclusao == "Excluindo serviço...":
+                    self.mensagem_exclusao = (
+                        "O Xano não confirmou a exclusão do serviço."
+                    )
+            else:
+                self.servicos = [
+                    servico
+                    for servico in self.servicos
+                    if servico["id"] != servico_id
+                ]
+                self.tem_servicos = bool(self.servicos)
+                registros_incompletos = sum(
+                    servico["dados_incompletos"] == "true"
+                    for servico in self.servicos
+                )
+                self.erro_lista_servicos = (
+                    f"{registros_incompletos} serviço(s) com dados obrigatórios "
+                    "incompletos. Use Editar para preencher os campos ausentes."
+                    if registros_incompletos
+                    else (
+                        "" if self.tem_servicos else "Nenhum serviço cadastrado."
+                    )
+                )
+                self.servico_id_exclusao = ""
+                self.mensagem_exclusao = "Serviço excluído com sucesso."
+                self.sucesso_exclusao = True
+                if self.servico_id_edicao == servico_id:
+                    self.editando = False
+                    self.servico_id_edicao = ""
+                    self.nome_edicao = ""
+                    self.descricao_edicao = ""
+                    self.preco_edicao = ""
+                    self.duracao_minutos_edicao = ""
+                    self.mensagem_edicao = ""
+                    self.sucesso_edicao = False
+        finally:
+            self.processando_exclusao = False
 
     @rx.event
     def set_nome(self, nome: str):
@@ -3039,10 +3573,62 @@ def cadastro_servico() -> rx.Component:
                                     on_click=ServicoState.iniciar_edicao(
                                         servico["id"]
                                     ),
-                                    disabled=ServicoState.processando_edicao,
+                                    disabled=(
+                                        ServicoState.processando_edicao
+                                        | ServicoState.processando_exclusao
+                                    ),
+                                ),
+                                rx.button(
+                                    "Excluir",
+                                    on_click=ServicoState.iniciar_exclusao(
+                                        servico["id"]
+                                    ),
+                                    disabled=(
+                                        ServicoState.processando_edicao
+                                        | ServicoState.processando_exclusao
+                                    ),
+                                    color_scheme="red",
+                                ),
+                                rx.cond(
+                                    ServicoState.servico_id_exclusao
+                                    == servico["id"],
+                                    rx.vstack(
+                                        rx.text(
+                                            "Confirma a exclusão deste serviço? "
+                                            "Agendamentos vinculados impedem "
+                                            "a exclusão.",
+                                            color="red",
+                                            size="2",
+                                        ),
+                                        rx.hstack(
+                                            rx.button(
+                                                "Confirmar exclusão",
+                                                on_click=(
+                                                    ServicoState.confirmar_exclusao
+                                                ),
+                                                loading=(
+                                                    ServicoState.processando_exclusao
+                                                ),
+                                                color_scheme="red",
+                                            ),
+                                            rx.button(
+                                                "Cancelar",
+                                                on_click=(
+                                                    ServicoState.cancelar_exclusao
+                                                ),
+                                                disabled=(
+                                                    ServicoState.processando_exclusao
+                                                ),
+                                                variant="outline",
+                                            ),
+                                        ),
+                                        align="start",
+                                        width="100%",
+                                    ),
                                 ),
                                 justify="between",
                                 align="center",
+                                wrap="wrap",
                                 width="100%",
                                 padding="12px",
                                 border="1px solid #ddd",
@@ -3053,6 +3639,22 @@ def cadastro_servico() -> rx.Component:
                         max_width="600px",
                     ),
                     rx.text(ServicoState.erro_lista_servicos),
+                ),
+            ),
+            rx.cond(
+                ServicoState.mensagem_exclusao,
+                rx.text(
+                    ServicoState.mensagem_exclusao,
+                    color=rx.cond(
+                        ServicoState.sucesso_exclusao,
+                        "green",
+                        rx.cond(
+                            ServicoState.processando_exclusao,
+                            "blue",
+                            "red",
+                        ),
+                    ),
+                    size="2",
                 ),
             ),
             spacing="5",

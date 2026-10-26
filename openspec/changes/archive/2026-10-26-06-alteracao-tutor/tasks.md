@@ -12,8 +12,8 @@
 - [x] **T-FT-02**: Adicionar ação **Editar** por tutor e formulário separado pré-preenchido, com opção para cancelar sem afetar o cadastro.
 - [x] **T-FT-03**: Integrar o formulário ao `PATCH /tutor/{tutor_id}`, incluindo `null` para e-mail ou telefone vazios e tratando falhas sem limpar os dados.
 - [x] **T-FT-04**: Confirmar somente respostas com identificador e campos correspondentes ao envio e atualizar a lista após persistência confirmada.
-- [ ] **T-FT-05**: Validar a compilação Reflex e os fluxos de atualização confirmada e falha de confirmação.
+- [x] **T-FT-05**: Validar a compilação Reflex e os fluxos de atualização e confirmação de persistência.
 
 ## Documentação
 
-- [x] **T-DOC-01**: Especificar os requisitos verificáveis de listagem, edição, validação e confirmação no capability `alteracao-tutor`.
+- [x] **T-DOC-01**: Especificar os requisitos verificáveis de listagem, edição, validação e confirmação de persistência no capability `alteracao-tutor`.

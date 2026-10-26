@@ -15,7 +15,6 @@ A tela `/tutores` oferece somente o cadastro de tutores. O Xano já possui `GET 
 
 **Fora do escopo:**
 
-- Excluir tutores ou disponibilizar a rota de exclusão na interface.
 - Editar Pets, Serviços ou Agendamentos.
 - Adicionar entidades, tabelas ou módulos ao domínio.
 - Alterar as regras do cadastro de tutor.

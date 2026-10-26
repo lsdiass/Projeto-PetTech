@@ -22,7 +22,7 @@ O sistema MUST permitir alterar `tutor_id`, `nome`, `especie`, `raca`, `porte` e
 
 ### Requirement: Listar e selecionar pets para edição
 
-A tela `/pets` MUST carregar pets por `GET /pet`, exibir uma ação **Editar** por registro com identificador válido e pré-preencher um formulário separado. Registros legados que tenham identificador válido, mas estejam sem campos obrigatórios, MUST permanecer visíveis, ser sinalizados como incompletos e permitir que o usuário os corrija. Deve informar carregamento, lista vazia e falha de listagem. Cancelar MUST encerrar a edição sem enviar PATCH, e a interface não deve oferecer exclusão.
+A tela `/pets` MUST carregar pets por `GET /pet`, exibir uma ação **Editar** por registro com identificador válido e pré-preencher um formulário separado. Registros legados com identificador válido, mas campos obrigatórios ausentes, MUST permanecer visíveis, ser sinalizados como incompletos e permitir correção. A tela deve informar carregamento, lista vazia e falha de listagem. Cancelar MUST encerrar a edição sem enviar PATCH.
 
 #### Scenario: Abrir e cancelar edição de pet
 
@@ -31,7 +31,7 @@ A tela `/pets` MUST carregar pets por `GET /pet`, exibir uma ação **Editar** p
 
 #### Scenario: Falha ou resposta inválida na listagem de pets
 
-- **WHEN** `GET /pet` falha ou retorna dados inválidos
+- **WHEN** `GET /pet` falha ou retorna uma lista incompatível
 - **THEN** a tela informa o problema e não apresenta a resposta como válida
 
 #### Scenario: Pet legado com dados obrigatórios incompletos
@@ -55,7 +55,7 @@ O sistema MUST permitir alterar `nome`, `descricao`, `preco` e `duracao_minutos`
 
 ### Requirement: Listar e selecionar serviços para edição
 
-A tela `/servicos` MUST carregar serviços por `GET /servico`, exibir uma ação **Editar** por registro com identificador válido e pré-preencher um formulário separado. Registros legados que tenham identificador válido, mas estejam sem campos obrigatórios, MUST permanecer visíveis, ser sinalizados como incompletos e permitir que o usuário os corrija. Deve informar carregamento, lista vazia e falha de listagem. Cancelar MUST encerrar a edição sem enviar PATCH, e a interface não deve oferecer exclusão.
+A tela `/servicos` MUST carregar serviços por `GET /servico`, exibir uma ação **Editar** por registro com identificador válido e pré-preencher um formulário separado. Registros legados com identificador válido, mas campos obrigatórios ausentes, MUST permanecer visíveis, ser sinalizados como incompletos e permitir correção. A tela deve informar carregamento, lista vazia e falha de listagem. Cancelar MUST encerrar a edição sem enviar PATCH.
 
 #### Scenario: Abrir e cancelar edição de serviço
 
@@ -64,7 +64,7 @@ A tela `/servicos` MUST carregar serviços por `GET /servico`, exibir uma ação
 
 #### Scenario: Falha ou resposta inválida na listagem de serviços
 
-- **WHEN** `GET /servico` falha ou retorna dados inválidos
+- **WHEN** `GET /servico` falha ou retorna uma lista incompatível
 - **THEN** a tela informa o problema e não apresenta a resposta como válida
 
 #### Scenario: Serviço legado com dados obrigatórios incompletos

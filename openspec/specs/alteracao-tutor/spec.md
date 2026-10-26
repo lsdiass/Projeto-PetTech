@@ -27,7 +27,7 @@ O sistema MUST permitir alterar somente `nome`, `email` e `telefone` de um regis
 
 ### Requirement: Selecionar tutor para edição
 
-A tela `/tutores` MUST carregar os registros pelo endpoint `GET /tutor`, apresentar uma ação **Editar** para cada tutor válido e pré-preencher um formulário separado com nome, e-mail e telefone. A tela MUST informar os estados de carregamento, lista vazia e falha de carregamento. A edição MUST oferecer cancelamento sem enviar alterações e não deve oferecer exclusão.
+A tela `/tutores` MUST carregar os registros pelo endpoint `GET /tutor`, apresentar uma ação **Editar** para cada tutor válido e pré-preencher um formulário separado de edição com nome, e-mail e telefone. A tela MUST informar os estados de carregamento, lista vazia e falha de carregamento. A edição MUST oferecer cancelamento sem enviar alterações.
 
 #### Scenario: Lista de tutores carregada
 

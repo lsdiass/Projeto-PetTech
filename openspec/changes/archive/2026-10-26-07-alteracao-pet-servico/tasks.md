@@ -17,4 +17,4 @@
 
 ## Documentação
 
-- [x] **T-DOC-01**: Especificar requisitos verificáveis para listagem, edição, validação e confirmação de Pet e Serviço.
+- [x] **T-DOC-01**: Especificar requisitos verificáveis para listagem, edição, confirmação e correção de registros legados incompletos.
