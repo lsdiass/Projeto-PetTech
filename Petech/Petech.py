@@ -1,6 +1,9 @@
 """Welcome to Reflex! This file outlines the steps to create a basic app."""
 
+import calendar
 from decimal import Decimal, InvalidOperation
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import httpx
 import reflex as rx
@@ -11,6 +14,40 @@ from rxconfig import config
 XANO_API_URL = "https://x8ki-letl-twmt.n7.xano.io/api:FxZRT-rM"
 DEMO_LOGIN_EMAIL = "admin@pettech.local"
 DEMO_LOGIN_PASSWORD = "demo-pettech"
+FUSO_AGENDAMENTO = ZoneInfo("America/Sao_Paulo")
+NOMES_MESES = (
+    "",
+    "Janeiro",
+    "Fevereiro",
+    "Março",
+    "Abril",
+    "Maio",
+    "Junho",
+    "Julho",
+    "Agosto",
+    "Setembro",
+    "Outubro",
+    "Novembro",
+    "Dezembro",
+)
+
+
+def timestamp_em_milissegundos(valor: object) -> int | None:
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, (int, float)):
+        return int(valor)
+    if not isinstance(valor, str):
+        return None
+    if valor.isdigit():
+        return int(valor)
+    try:
+        data_hora = datetime.fromisoformat(valor.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if data_hora.tzinfo is None:
+        data_hora = data_hora.replace(tzinfo=FUSO_AGENDAMENTO)
+    return int(data_hora.timestamp() * 1000)
 
 
 def credenciais_demo_validas(email: str, senha: str) -> bool:
@@ -26,6 +63,30 @@ def parse_preco(valor: str) -> Decimal:
     if "," in valor_limpo:
         valor_limpo = valor_limpo.replace(".", "").replace(",", ".")
     return Decimal(valor_limpo)
+
+
+def normalizar_id(valor: object) -> str | None:
+    if isinstance(valor, bool):
+        return None
+    if isinstance(valor, int) and valor > 0:
+        return str(valor)
+    if isinstance(valor, str) and valor.isdigit() and int(valor) > 0:
+        return str(int(valor))
+    return None
+
+
+def formatar_data_hora_agendamento(valor: object) -> str | None:
+    try:
+        timestamp = timestamp_em_milissegundos(valor)
+        if timestamp is None:
+            return None
+        data_hora = datetime.fromtimestamp(
+            timestamp / 1000,
+            tz=FUSO_AGENDAMENTO,
+        )
+    except (OverflowError, OSError, TypeError, ValueError):
+        return None
+    return data_hora.strftime("%d/%m/%Y às %H:%M")
 
 
 class TutorState(rx.State):
@@ -183,6 +244,8 @@ def index() -> rx.Component:
             rx.link("Página inicial", href="/"),
             rx.link("Cadastrar Pet", href="/pets"),
             rx.link("Cadastrar Serviço", href="/servicos"),
+            rx.link("Agendar atendimento", href="/agendamentos"),
+            rx.link("Consultar agendamentos", href="/agendamentos/lista"),
             
             rx.vstack(
                 rx.text("Nome:"),
@@ -442,6 +505,8 @@ def cadastro_pet() -> rx.Component:
             rx.text("Preencha os dados do pet e selecione seu tutor responsável.", size="3"),
             rx.link("Voltar ao cadastro de tutor", href="/tutores"),
             rx.link("Cadastrar Serviço", href="/servicos"),
+            rx.link("Agendar atendimento", href="/agendamentos"),
+            rx.link("Consultar agendamentos", href="/agendamentos/lista"),
             rx.link("Página inicial", href="/"),
             rx.vstack(
                 rx.text("Tutor responsável:"),
@@ -655,6 +720,985 @@ class ServicoState(rx.State):
             self.processando = False
 
 
+class AgendamentoState(rx.State):
+    opcoes_pet: list[str] = []
+    opcoes_servico: list[str] = []
+    pets: list[dict[str, str]] = []
+    servicos: list[dict[str, str]] = []
+    pet_selecionado: str = ""
+    servico_selecionado: str = ""
+    ano: int = 0
+    mes: int = 0
+    titulo_mes: str = ""
+    dias_calendario: list[dict[str, str]] = []
+    dias_disponibilidade: list[dict[str, str]] = []
+    horarios_mes: list[dict[str, str]] = []
+    horarios: list[dict[str, str]] = []
+    data_selecionada: str = ""
+    horario_selecionado: str = ""
+    carregando_dados: bool = False
+    carregando_disponibilidade: bool = False
+    processando: bool = False
+    erro: str = ""
+    aviso: str = ""
+    mensagem: str = ""
+    sucesso: bool = False
+
+    def _atualizar_calendario(self):
+        if self.ano < 1 or self.mes < 1:
+            self.dias_calendario = []
+            return
+
+        hoje = datetime.now(FUSO_AGENDAMENTO).date()
+        primeiro_dia_semana, dias_no_mes = calendar.monthrange(self.ano, self.mes)
+        dias = [
+            {
+                "data": "",
+                "numero": "",
+                "habilitado": "false",
+                "espaco": "true",
+            }
+            for _ in range(primeiro_dia_semana)
+        ]
+        disponibilidade = {dia["data"]: dia for dia in self.dias_disponibilidade}
+
+        for numero in range(1, dias_no_mes + 1):
+            data = f"{self.ano:04d}-{self.mes:02d}-{numero:02d}"
+            dia = disponibilidade.get(data)
+            habilitado = (
+                dia is not None
+                and dia["tem_horario_disponivel"] == "true"
+                and datetime.strptime(data, "%Y-%m-%d").date() >= hoje
+            )
+            dias.append({
+                "data": data,
+                "numero": str(numero),
+                "habilitado": str(habilitado).lower(),
+                "espaco": "false",
+            })
+
+        self.dias_calendario = dias
+        self.titulo_mes = f"{NOMES_MESES[self.mes]} {self.ano}"
+
+    @rx.event
+    def carregar_dados(self):
+        self.carregando_dados = True
+        self.erro = ""
+        self.aviso = ""
+        self.mensagem = ""
+        self.pets = []
+        self.servicos = []
+        self.opcoes_pet = []
+        self.opcoes_servico = []
+        agora = datetime.now(FUSO_AGENDAMENTO)
+        self.ano = agora.year
+        self.mes = agora.month
+
+        try:
+            resposta_pets = httpx.get(f"{XANO_API_URL}/pet", timeout=15.0)
+            resposta_pets.raise_for_status()
+            pets = resposta_pets.json()
+            resposta_servicos = httpx.get(
+                f"{XANO_API_URL}/servico",
+                timeout=15.0,
+            )
+            resposta_servicos.raise_for_status()
+            servicos = resposta_servicos.json()
+        except httpx.HTTPStatusError as error:
+            self.erro = (
+                "Não foi possível carregar Pets e Serviços do Xano: "
+                f"HTTP {error.response.status_code}."
+            )
+        except httpx.RequestError as error:
+            self.erro = f"Erro de conexão ao carregar Pets e Serviços: {error}"
+        except ValueError:
+            self.erro = "O Xano retornou uma lista de Pets ou Serviços inválida."
+        else:
+            if not isinstance(pets, list) or not isinstance(servicos, list):
+                self.erro = "O Xano retornou uma lista de Pets ou Serviços inválida."
+            else:
+                pets_validos: list[dict[str, str]] = []
+                servicos_validos: list[dict[str, str]] = []
+                pets_invalidos = 0
+                servicos_invalidos = 0
+                for pet in pets:
+                    if (
+                        not isinstance(pet, dict)
+                        or not isinstance(pet.get("id"), int)
+                        or not isinstance(pet.get("tutor_id"), int)
+                        or not isinstance(pet.get("nome"), str)
+                        or not pet["nome"].strip()
+                    ):
+                        pets_invalidos += 1
+                        continue
+                    pets_validos.append({
+                        "id": str(pet["id"]),
+                        "nome": pet["nome"],
+                        "tutor_id": str(pet["tutor_id"]),
+                    })
+
+                for servico in servicos:
+                    if (
+                        not isinstance(servico, dict)
+                        or not isinstance(servico.get("id"), int)
+                        or not isinstance(servico.get("nome"), str)
+                        or not servico["nome"].strip()
+                        or not isinstance(servico.get("duracao_minutos"), int)
+                        or servico["duracao_minutos"] <= 0
+                    ):
+                        servicos_invalidos += 1
+                        continue
+                    servicos_validos.append({
+                        "id": str(servico["id"]),
+                        "nome": servico["nome"],
+                        "duracao_minutos": str(servico["duracao_minutos"]),
+                    })
+
+                self.pets = pets_validos
+                self.servicos = servicos_validos
+                self.opcoes_pet = [
+                    f"{pet['id']} - {pet['nome']} (Tutor {pet['tutor_id']})"
+                    for pet in pets_validos
+                ]
+                self.opcoes_servico = [
+                    f"{servico['id']} - {servico['nome']} "
+                    f"({servico['duracao_minutos']} min)"
+                    for servico in servicos_validos
+                ]
+                avisos = []
+                if pets_invalidos:
+                    avisos.append(f"{pets_invalidos} Pet(s) inválido(s) foram omitidos.")
+                if servicos_invalidos:
+                    avisos.append(
+                        f"{servicos_invalidos} Serviço(s) com dados inválidos "
+                        "foram omitidos."
+                    )
+                self.aviso = " ".join(avisos)
+
+                if not pets_validos:
+                    self.erro = (
+                        "Nenhum Pet válido cadastrado. Cadastre ou corrija um Pet "
+                        "antes de agendar."
+                    )
+                elif not servicos_validos:
+                    self.erro = (
+                        "Nenhum Serviço válido cadastrado. Cadastre ou corrija um "
+                        "Serviço antes de agendar."
+                    )
+
+        self.carregando_dados = False
+        self._atualizar_calendario()
+
+    @rx.event
+    def selecionar_pet(self, opcao: str):
+        pet_id = opcao.split(" - ", 1)[0]
+        if not any(pet["id"] == pet_id for pet in self.pets):
+            self.erro = "Selecione um Pet cadastrado."
+            return
+        self.pet_selecionado = opcao
+        self.erro = ""
+        self.mensagem = ""
+
+    @rx.event
+    def selecionar_servico(self, opcao: str):
+        servico_id = opcao.split(" - ", 1)[0]
+        if not any(servico["id"] == servico_id for servico in self.servicos):
+            self.erro = "Selecione um Serviço cadastrado."
+            return
+
+        self.servico_selecionado = opcao
+        self.data_selecionada = ""
+        self.horario_selecionado = ""
+        self.horarios = []
+        self.mensagem = ""
+        self.sucesso = False
+        self._carregar_disponibilidade()
+
+    def _carregar_disponibilidade(self):
+        if not self.servico_selecionado:
+            self.dias_disponibilidade = []
+            self.horarios_mes = []
+            self._atualizar_calendario()
+            return
+
+        servico_id = int(self.servico_selecionado.split(" - ", 1)[0])
+        self.carregando_disponibilidade = True
+        self.erro = ""
+        self.dias_disponibilidade = []
+        self.horarios_mes = []
+        try:
+            response = httpx.get(
+                f"{XANO_API_URL}/agendamento_disponibilidade",
+                params={
+                    "servico_id": servico_id,
+                    "ano": self.ano,
+                    "mes": self.mes,
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            dados = response.json()
+        except httpx.HTTPStatusError as error:
+            self.erro = (
+                "Erro ao consultar disponibilidade no Xano: "
+                f"HTTP {error.response.status_code}."
+            )
+            self.dias_disponibilidade = []
+            self.horarios_mes = []
+        except httpx.RequestError as error:
+            self.erro = f"Erro de conexão ao consultar disponibilidade: {error}"
+            self.dias_disponibilidade = []
+            self.horarios_mes = []
+        except ValueError:
+            self.erro = "O Xano retornou uma disponibilidade inválida."
+            self.dias_disponibilidade = []
+            self.horarios_mes = []
+        else:
+            dias = []
+            horarios_mes = []
+            if not isinstance(dados, list):
+                self.erro = "O Xano retornou uma disponibilidade inválida."
+            else:
+                for dia in dados:
+                    if (
+                        not isinstance(dia, dict)
+                        or not isinstance(dia.get("data"), str)
+                        or not isinstance(dia.get("horarios"), list)
+                        or not isinstance(
+                            dia.get("tem_horario_disponivel"), bool
+                        )
+                    ):
+                        self.erro = (
+                            "O Xano retornou um dia de disponibilidade inválido."
+                        )
+                        break
+
+                    horarios = []
+                    for horario in dia["horarios"]:
+                        if (
+                            not isinstance(horario, dict)
+                            or not isinstance(horario.get("hora"), str)
+                            or not isinstance(horario.get("disponivel"), bool)
+                        ):
+                            self.erro = (
+                                "O Xano retornou um horário de disponibilidade inválido."
+                            )
+                            break
+                        data_hora = timestamp_em_milissegundos(
+                            horario.get("data_hora")
+                        )
+                        if data_hora is None:
+                            self.erro = (
+                                "O Xano retornou um horário sem data válida."
+                            )
+                            break
+                        horarios.append(
+                            {
+                                "data": dia["data"],
+                                "data_hora": str(data_hora),
+                                "hora": horario["hora"],
+                                "disponivel": str(
+                                    horario["disponivel"]
+                                ).lower(),
+                            }
+                        )
+                    if self.erro:
+                        break
+                    dias.append({
+                        "data": dia["data"],
+                        "tem_horario_disponivel": str(
+                            dia["tem_horario_disponivel"]
+                        ).lower(),
+                    })
+                    horarios_mes.extend(horarios)
+                if not self.erro:
+                    self.dias_disponibilidade = dias
+                    self.horarios_mes = horarios_mes
+
+        self.carregando_disponibilidade = False
+        self._atualizar_calendario()
+
+    def _recarregar_apos_falha(self, mensagem_erro: str):
+        self._carregar_disponibilidade()
+        if self.erro:
+            self.erro = f"{mensagem_erro} {self.erro}"
+        else:
+            self.erro = mensagem_erro
+
+    @rx.event
+    def mudar_mes(self, incremento: int):
+        ano = self.ano
+        mes = self.mes + incremento
+        if mes < 1:
+            ano -= 1
+            mes = 12
+        elif mes > 12:
+            ano += 1
+            mes = 1
+
+        agora = datetime.now(FUSO_AGENDAMENTO)
+        if (ano, mes) < (agora.year, agora.month):
+            return
+
+        self.ano = ano
+        self.mes = mes
+        self.data_selecionada = ""
+        self.horario_selecionado = ""
+        self.horarios = []
+        self.mensagem = ""
+        self._carregar_disponibilidade()
+
+    @rx.event
+    def selecionar_dia(self, data: str):
+        dia = next(
+            (
+                item
+                for item in self.dias_disponibilidade
+                if (
+                    item["data"] == data
+                    and item["tem_horario_disponivel"] == "true"
+                )
+            ),
+            None,
+        )
+        if dia is None:
+            self.erro = "Este dia não possui horários disponíveis."
+            return
+
+        self.data_selecionada = data
+        self.horarios = [
+            horario
+            for horario in self.horarios_mes
+            if horario["data"] == data
+        ]
+        self.horario_selecionado = ""
+        self.erro = ""
+        self.mensagem = ""
+        self.sucesso = False
+
+    @rx.event
+    def selecionar_horario(self, data_hora: str):
+        horario = next(
+            (
+                item
+                for item in self.horarios
+                if (
+                    item["data_hora"] == data_hora
+                    and item["disponivel"] == "true"
+                )
+            ),
+            None,
+        )
+        if horario is None:
+            self.erro = "Selecione um horário que ainda esteja disponível."
+            return
+        self.horario_selecionado = horario["data_hora"]
+        self.erro = ""
+        self.mensagem = ""
+        self.sucesso = False
+
+    @rx.event
+    def confirmar_agendamento(self):
+        if self.processando:
+            return
+        if not self.pet_selecionado or not self.servico_selecionado:
+            self.erro = "Selecione um Pet e um Serviço antes de agendar."
+            return
+        if not self.data_selecionada or not self.horario_selecionado:
+            self.erro = "Selecione um dia e horário disponíveis."
+            return
+
+        pet_id = int(self.pet_selecionado.split(" - ", 1)[0])
+        servico_id = int(self.servico_selecionado.split(" - ", 1)[0])
+        data_hora = int(self.horario_selecionado)
+        self.processando = True
+        self.erro = ""
+        self.mensagem = "Confirmando agendamento..."
+        self.sucesso = False
+
+        try:
+            response = httpx.post(
+                f"{XANO_API_URL}/agendamento",
+                json={
+                    "pet_id": pet_id,
+                    "servico_id": servico_id,
+                    "data_hora": data_hora,
+                },
+                timeout=20.0,
+            )
+            response.raise_for_status()
+            agendamento = response.json()
+        except httpx.HTTPStatusError as error:
+            self.mensagem = ""
+            if error.response.status_code == 429:
+                tempo_espera = error.response.headers.get("Retry-After")
+                if tempo_espera and tempo_espera.isdigit():
+                    self.erro = (
+                        "O Xano limitou temporariamente as chamadas. "
+                        f"Aguarde {tempo_espera} segundos antes de tentar novamente."
+                    )
+                else:
+                    self.erro = (
+                        "O Xano limitou temporariamente as chamadas. "
+                        "Aguarde um pouco antes de tentar novamente."
+                    )
+            else:
+                self.erro = (
+                    "O Xano não confirmou o agendamento: "
+                    f"HTTP {error.response.status_code}."
+                )
+                if error.response.status_code < 500:
+                    self._recarregar_apos_falha(self.erro)
+        except httpx.RequestError as error:
+            self.mensagem = ""
+            self.erro = f"Erro de conexão ao confirmar agendamento: {error}"
+        except ValueError:
+            self.mensagem = ""
+            self.erro = "O Xano retornou uma confirmação inválida."
+        else:
+            data_hora_confirmada = (
+                timestamp_em_milissegundos(agendamento.get("data_hora"))
+                if isinstance(agendamento, dict)
+                else None
+            )
+            if (
+                not isinstance(agendamento, dict)
+                or agendamento.get("id") is None
+                or agendamento.get("pet_id") != pet_id
+                or agendamento.get("servico_id") != servico_id
+                or data_hora_confirmada != data_hora
+                or agendamento.get("status") != "Agendado"
+            ):
+                self.mensagem = ""
+                self.erro = (
+                    "O Xano não confirmou os dados persistidos do agendamento."
+                )
+            else:
+                self.mensagem = "Agendado com sucesso!"
+                self.sucesso = True
+                self.horario_selecionado = ""
+                self.data_selecionada = ""
+                self.horarios = []
+                self._carregar_disponibilidade()
+        finally:
+            self.processando = False
+
+
+class ListaAgendamentosState(rx.State):
+    agendamentos: list[dict[str, str]] = []
+    id_selecionado: str = ""
+    detalhe_selecionado: dict[str, str] = {}
+    carregando: bool = False
+    erro: str = ""
+
+    @rx.var
+    def sem_agendamentos(self) -> bool:
+        return not self.carregando and not self.erro and not self.agendamentos
+
+    @rx.event
+    def carregar_agendamentos(self):
+        self.carregando = True
+        self.erro = ""
+        self.agendamentos = []
+        self.id_selecionado = ""
+        self.detalhe_selecionado = {}
+
+        try:
+            agendamentos = buscar_lista_xano("agendamento")
+            pets = buscar_lista_xano("pet")
+            servicos = buscar_lista_xano("servico")
+            tutores = buscar_lista_xano("tutor")
+        except httpx.HTTPStatusError as error:
+            endpoint = error.request.url.path.rsplit("/", 1)[-1]
+            self.erro = (
+                f"Não foi possível carregar {endpoint} no Xano: "
+                f"HTTP {error.response.status_code}."
+            )
+        except httpx.RequestError as error:
+            endpoint = error.request.url.path.rsplit("/", 1)[-1]
+            self.erro = f"Erro de conexão ao carregar {endpoint}: {error}"
+        except ValueError as error:
+            self.erro = str(error)
+        else:
+            pets_por_id = {
+                item_id: pet
+                for pet in pets
+                if (item_id := normalizar_id(pet.get("id"))) is not None
+            }
+            servicos_por_id = {
+                item_id: servico
+                for servico in servicos
+                if (item_id := normalizar_id(servico.get("id"))) is not None
+            }
+            tutores_por_id = {
+                item_id: tutor
+                for tutor in tutores
+                if (item_id := normalizar_id(tutor.get("id"))) is not None
+            }
+            registros = []
+
+            for agendamento in agendamentos:
+                agendamento_id = normalizar_id(agendamento.get("id"))
+                pet_id = normalizar_id(agendamento.get("pet_id"))
+                servico_id = normalizar_id(agendamento.get("servico_id"))
+                data_hora = formatar_data_hora_agendamento(
+                    agendamento.get("data_hora")
+                )
+                status = agendamento.get("status")
+                if (
+                    agendamento_id is None
+                    or pet_id is None
+                    or servico_id is None
+                    or data_hora is None
+                    or not isinstance(status, str)
+                    or not status.strip()
+                ):
+                    self.erro = (
+                        "O Xano retornou um agendamento com identificadores, "
+                        "data/hora ou status inválidos."
+                    )
+                    break
+
+                pet = pets_por_id.get(pet_id)
+                servico = servicos_por_id.get(servico_id)
+                tutor_id = (
+                    normalizar_id(pet.get("tutor_id"))
+                    if pet is not None
+                    else None
+                )
+                tutor = tutores_por_id.get(tutor_id or "")
+                pet_nome = (
+                    pet.get("nome")
+                    if pet is not None and isinstance(pet.get("nome"), str)
+                    else f"Pet não encontrado (ID {pet_id})"
+                )
+                tutor_nome = (
+                    tutor.get("nome")
+                    if tutor is not None
+                    and isinstance(tutor.get("nome"), str)
+                    else (
+                        f"Tutor não encontrado (ID {tutor_id})"
+                        if tutor_id
+                        else "Tutor não encontrado"
+                    )
+                )
+                servico_nome = (
+                    servico.get("nome")
+                    if servico is not None
+                    and isinstance(servico.get("nome"), str)
+                    else f"Serviço não encontrado (ID {servico_id})"
+                )
+                registros.append({
+                    "id": agendamento_id,
+                    "pet": pet_nome,
+                    "tutor": tutor_nome,
+                    "servico": servico_nome,
+                    "data_hora": data_hora,
+                    "status": status.strip(),
+                    "timestamp": str(
+                        timestamp_em_milissegundos(
+                            agendamento.get("data_hora")
+                        )
+                    ),
+                })
+
+            if not self.erro:
+                self.agendamentos = sorted(
+                    registros,
+                    key=lambda item: int(item["timestamp"]),
+                    reverse=True,
+                )
+
+        self.carregando = False
+
+    @rx.event
+    def selecionar_agendamento(self, agendamento_id: str):
+        agendamento = next(
+            (
+                item
+                for item in self.agendamentos
+                if item["id"] == agendamento_id
+            ),
+            None,
+        )
+        if agendamento is None:
+            self.erro = "O agendamento selecionado não está na lista."
+            self.id_selecionado = ""
+            self.detalhe_selecionado = {}
+            return
+
+        self.id_selecionado = agendamento_id
+        self.detalhe_selecionado = agendamento
+        self.erro = ""
+
+    @rx.event
+    def fechar_detalhe(self):
+        self.id_selecionado = ""
+        self.detalhe_selecionado = {}
+
+
+def buscar_lista_xano(endpoint: str) -> list[dict[str, object]]:
+    response = httpx.get(f"{XANO_API_URL}/{endpoint}", timeout=15.0)
+    response.raise_for_status()
+    dados = response.json()
+    if not isinstance(dados, list) or any(
+        not isinstance(item, dict) for item in dados
+    ):
+        raise ValueError(
+            f"O Xano retornou uma lista inválida para /{endpoint}."
+        )
+    return dados
+
+
+def calendario_agendamento() -> rx.Component:
+    return rx.vstack(
+        rx.hstack(
+            rx.button(
+                "‹",
+                on_click=AgendamentoState.mudar_mes(-1),
+                disabled=(
+                    (AgendamentoState.ano == datetime.now(FUSO_AGENDAMENTO).year)
+                    & (
+                        AgendamentoState.mes
+                        == datetime.now(FUSO_AGENDAMENTO).month
+                    )
+                ),
+            ),
+            rx.heading(AgendamentoState.titulo_mes, size="5"),
+            rx.button(
+                "›",
+                on_click=AgendamentoState.mudar_mes(1),
+            ),
+            align="center",
+            justify="between",
+            width="100%",
+        ),
+        rx.grid(
+            *[
+                rx.text(dia, weight="bold", align="center")
+                for dia in ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+            ],
+            columns="repeat(7, 1fr)",
+            width="100%",
+        ),
+        rx.grid(
+            rx.foreach(
+                AgendamentoState.dias_calendario,
+                lambda dia: rx.cond(
+                dia["espaco"] == "true",
+                    rx.box(height="40px"),
+                    rx.button(
+                    dia["numero"],
+                    on_click=AgendamentoState.selecionar_dia(dia["data"]),
+                    disabled=dia["habilitado"] != "true",
+                    color_scheme=rx.cond(
+                        dia["habilitado"] == "true",
+                        "blue",
+                        "gray",
+                    ),
+                    variant=rx.cond(
+                        dia["data"] == AgendamentoState.data_selecionada,
+                        "solid",
+                        "outline",
+                    ),
+                        width="100%",
+                    ),
+                ),
+            ),
+            columns="repeat(7, 1fr)",
+            width="100%",
+        ),
+        spacing="3",
+        width="100%",
+    )
+
+
+def fluxo_agendamento() -> rx.Component:
+    return rx.container(
+        rx.color_mode.button(position="top-right"),
+        rx.vstack(
+            rx.heading("Novo Agendamento", size="8"),
+            rx.text(
+                "Selecione um Pet, um Serviço, o dia e um horário disponível.",
+                size="3",
+            ),
+            rx.hstack(
+                rx.link("Cadastro de Tutor", href="/tutores"),
+                rx.link("Cadastro de Pet", href="/pets"),
+                rx.link("Cadastro de Serviço", href="/servicos"),
+                rx.link("Consultar agendamentos", href="/agendamentos/lista"),
+                spacing="4",
+                wrap="wrap",
+            ),
+            rx.cond(
+                AgendamentoState.carregando_dados,
+                rx.text("Carregando Pets e Serviços..."),
+                rx.vstack(
+                    rx.text("Pet:"),
+                    rx.select(
+                        AgendamentoState.opcoes_pet,
+                        value=AgendamentoState.pet_selecionado,
+                        on_change=AgendamentoState.selecionar_pet,
+                        placeholder="Selecione o Pet",
+                        width="100%",
+                    ),
+                    rx.text("Serviço:"),
+                    rx.select(
+                        AgendamentoState.opcoes_servico,
+                        value=AgendamentoState.servico_selecionado,
+                        on_change=AgendamentoState.selecionar_servico,
+                        placeholder="Selecione o Serviço",
+                        width="100%",
+                    ),
+                    rx.cond(
+                        (AgendamentoState.servico_selecionado != "")
+                        & (AgendamentoState.pet_selecionado == ""),
+                        rx.text("Selecione um Pet para visualizar o calendário."),
+                    ),
+                    rx.cond(
+                        AgendamentoState.carregando_disponibilidade,
+                        rx.text("Consultando disponibilidade..."),
+                        rx.cond(
+                                    (AgendamentoState.servico_selecionado != "")
+                                    & (AgendamentoState.pet_selecionado != ""),
+                            rx.vstack(
+                                rx.heading("Selecione o dia", size="5"),
+                                calendario_agendamento(),
+                                rx.cond(
+                                    AgendamentoState.data_selecionada != "",
+                                    rx.vstack(
+                                        rx.heading(
+                                            "Horários disponíveis",
+                                            size="5",
+                                        ),
+                                        rx.grid(
+                                            rx.foreach(
+                                                AgendamentoState.horarios,
+                                                lambda horario: rx.button(
+                                                    horario["hora"],
+                                                    on_click=AgendamentoState
+                                                    .selecionar_horario(
+                                                        horario["data_hora"]
+                                                    ),
+                                                    disabled=(
+                                                        horario["disponivel"]
+                                                        != "true"
+                                                    ),
+                                                    color_scheme=rx.cond(
+                                                        horario["disponivel"]
+                                                        == "true",
+                                                        "blue",
+                                                        "gray",
+                                                    ),
+                                                    variant=rx.cond(
+                                                        horario["data_hora"]
+                                                        == AgendamentoState
+                                                        .horario_selecionado,
+                                                        "solid",
+                                                        "outline",
+                                                    ),
+                                                ),
+                                            ),
+                                            columns="repeat(4, 1fr)",
+                                            width="100%",
+                                        ),
+                                        rx.button(
+                                            "Confirmar agendamento",
+                                            on_click=AgendamentoState
+                                            .confirmar_agendamento,
+                                            loading=AgendamentoState.processando,
+                                            disabled=(
+                                                (
+                                                    AgendamentoState
+                                                    .horario_selecionado
+                                                    == ""
+                                                )
+                                                | AgendamentoState.processando
+                                            ),
+                                            width="100%",
+                                        ),
+                                        width="100%",
+                                        spacing="3",
+                                    ),
+                                ),
+                                width="100%",
+                                spacing="4",
+                            ),
+                        ),
+                    ),
+                    rx.cond(
+                        AgendamentoState.erro != "",
+                        rx.text(AgendamentoState.erro, color="red", size="2"),
+                    ),
+                    rx.cond(
+                        AgendamentoState.aviso != "",
+                        rx.text(
+                            AgendamentoState.aviso,
+                            color="orange",
+                            size="2",
+                        ),
+                    ),
+                    rx.cond(
+                        AgendamentoState.mensagem != "",
+                        rx.text(
+                            AgendamentoState.mensagem,
+                            color=rx.cond(
+                                AgendamentoState.sucesso,
+                                "green",
+                                "blue",
+                            ),
+                            size="2",
+                        ),
+                    ),
+                    width="100%",
+                    max_width="600px",
+                    padding="20px",
+                    border="1px solid #ddd",
+                    border_radius="10px",
+                    spacing="3",
+                ),
+            ),
+            spacing="5",
+            justify="center",
+            min_height="85vh",
+            align="center",
+            width="100%",
+        ),
+    )
+
+
+def lista_agendamentos() -> rx.Component:
+    return rx.container(
+        rx.color_mode.button(position="top-right"),
+        rx.vstack(
+            rx.heading("Agendamentos", size="8"),
+            rx.text(
+                "Consulte os atendimentos cadastrados e seus vínculos.",
+                size="3",
+            ),
+            rx.hstack(
+                rx.link("Novo agendamento", href="/agendamentos"),
+                rx.link("Cadastro de tutor", href="/tutores"),
+                rx.button(
+                    "Atualizar lista",
+                    on_click=ListaAgendamentosState.carregar_agendamentos,
+                    loading=ListaAgendamentosState.carregando,
+                    disabled=ListaAgendamentosState.carregando,
+                ),
+                align="center",
+                spacing="4",
+                width="100%",
+            ),
+            rx.cond(
+                ListaAgendamentosState.erro != "",
+                rx.text(ListaAgendamentosState.erro, color="red", size="2"),
+            ),
+            rx.cond(
+                ListaAgendamentosState.carregando,
+                rx.text("Carregando agendamentos..."),
+            ),
+            rx.cond(
+                ListaAgendamentosState.sem_agendamentos,
+                rx.text("Nenhum agendamento cadastrado."),
+            ),
+            rx.foreach(
+                ListaAgendamentosState.agendamentos,
+                lambda agendamento: rx.box(
+                    rx.hstack(
+                        rx.vstack(
+                            rx.heading(agendamento["pet"], size="4"),
+                            rx.text(agendamento["servico"]),
+                            rx.text(agendamento["data_hora"]),
+                            rx.hstack(
+                                rx.text("Status:", weight="bold"),
+                                rx.text(agendamento["status"]),
+                                spacing="2",
+                            ),
+                            align="start",
+                            spacing="1",
+                        ),
+                        rx.spacer(),
+                        rx.button(
+                            "Ver detalhes",
+                            on_click=ListaAgendamentosState
+                            .selecionar_agendamento(agendamento["id"]),
+                        ),
+                        align="center",
+                        width="100%",
+                    ),
+                    border="1px solid #ddd",
+                    border_radius="10px",
+                    padding="16px",
+                    width="100%",
+                ),
+            ),
+            rx.cond(
+                ListaAgendamentosState.id_selecionado != "",
+                rx.vstack(
+                    rx.heading("Detalhes do agendamento", size="6"),
+                    rx.hstack(
+                        rx.text("Tutor:", weight="bold"),
+                        rx.text(
+                            ListaAgendamentosState
+                            .detalhe_selecionado["tutor"]
+                        ),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.text("Pet:", weight="bold"),
+                        rx.text(
+                            ListaAgendamentosState
+                            .detalhe_selecionado["pet"]
+                        ),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.text("Serviço:", weight="bold"),
+                        rx.text(
+                            ListaAgendamentosState
+                            .detalhe_selecionado["servico"]
+                        ),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.text("Data e hora:", weight="bold"),
+                        rx.text(
+                            ListaAgendamentosState
+                            .detalhe_selecionado["data_hora"]
+                        ),
+                        spacing="2",
+                    ),
+                    rx.hstack(
+                        rx.text("Status:", weight="bold"),
+                        rx.text(
+                            ListaAgendamentosState
+                            .detalhe_selecionado["status"]
+                        ),
+                        spacing="2",
+                    ),
+                    rx.button(
+                        "Fechar detalhes",
+                        on_click=ListaAgendamentosState.fechar_detalhe,
+                    ),
+                    align="start",
+                    width="100%",
+                    border="1px solid #aaa",
+                    border_radius="10px",
+                    padding="20px",
+                    spacing="3",
+                ),
+            ),
+            spacing="4",
+            width="100%",
+            max_width="800px",
+            padding="24px",
+            align="start",
+            min_height="85vh",
+        ),
+        width="100%",
+    )
+
+
 def cadastro_servico() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
@@ -663,6 +1707,8 @@ def cadastro_servico() -> rx.Component:
             rx.text("Cadastre um serviço oferecido pelo estabelecimento.", size="3"),
             rx.link("Voltar ao cadastro de tutor", href="/tutores"),
             rx.link("Ir para cadastro de pet", href="/pets"),
+            rx.link("Agendar atendimento", href="/agendamentos"),
+            rx.link("Consultar agendamentos", href="/agendamentos/lista"),
             rx.link("Página inicial", href="/"),
             rx.vstack(
                 rx.text("Nome:"),
@@ -736,3 +1782,13 @@ app.add_page(
     on_load=PetState.carregar_tutores,
 )
 app.add_page(cadastro_servico, route="/servicos")
+app.add_page(
+    fluxo_agendamento,
+    route="/agendamentos",
+    on_load=AgendamentoState.carregar_dados,
+)
+app.add_page(
+    lista_agendamentos,
+    route="/agendamentos/lista",
+    on_load=ListaAgendamentosState.carregar_agendamentos,
+)
