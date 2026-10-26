@@ -9,6 +9,15 @@ from rxconfig import config
 
 
 XANO_API_URL = "https://x8ki-letl-twmt.n7.xano.io/api:FxZRT-rM"
+DEMO_LOGIN_EMAIL = "admin@pettech.local"
+DEMO_LOGIN_PASSWORD = "demo-pettech"
+
+
+def credenciais_demo_validas(email: str, senha: str) -> bool:
+    return (
+        email.strip().lower() == DEMO_LOGIN_EMAIL
+        and senha == DEMO_LOGIN_PASSWORD
+    )
 
 
 def parse_preco(valor: str) -> Decimal:
@@ -87,12 +96,91 @@ class TutorState(rx.State):
         finally:
             self.processando = False
 
+class LoginDemoState(rx.State):
+    email: str = ""
+    senha: str = ""
+    mensagem: str = ""
+
+    @rx.event
+    def set_email(self, email: str):
+        self.email = email
+
+    @rx.event
+    def set_senha(self, senha: str):
+        self.senha = senha
+
+    @rx.event
+    def entrar(self):
+        if credenciais_demo_validas(self.email, self.senha):
+            self.mensagem = ""
+            return rx.redirect("/tutores")
+
+        self.mensagem = "E-mail ou senha demonstrativos inválidos."
+
+
+def login() -> rx.Component:
+    return rx.container(
+        rx.color_mode.button(position="top-right"),
+        rx.vstack(
+            rx.heading("PetTech", size="8"),
+            rx.text("Acesse o sistema de gestão do pet shop.", size="3"),
+            rx.vstack(
+                rx.text("E-mail:"),
+                rx.input(
+                    placeholder="E-mail de demonstração",
+                    type="email",
+                    on_change=LoginDemoState.set_email,
+                    value=LoginDemoState.email,
+                    width="100%",
+                ),
+                rx.text("Senha:"),
+                rx.input(
+                    placeholder="Senha de demonstração",
+                    type="password",
+                    on_change=LoginDemoState.set_senha,
+                    value=LoginDemoState.senha,
+                    width="100%",
+                ),
+                rx.button(
+                    "Entrar",
+                    on_click=LoginDemoState.entrar,
+                    width="100%",
+                    margin_top="10px",
+                ),
+                rx.cond(
+                    LoginDemoState.mensagem,
+                    rx.text(LoginDemoState.mensagem, color="red", size="2"),
+                ),
+                rx.text(
+                    "Acesso demonstrativo: admin@pettech.local / demo-pettech",
+                    size="2",
+                ),
+                rx.text(
+                    "Protótipo sem autenticação real: as rotas e os dados não são protegidos.",
+                    color="orange",
+                    size="2",
+                ),
+                width="400px",
+                padding="20px",
+                border="1px solid #ddd",
+                border_radius="10px",
+                spacing="3",
+            ),
+            spacing="5",
+            justify="center",
+            min_height="85vh",
+            align="center",
+        ),
+    )
+
+
 def index() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
         rx.vstack(
             rx.heading("Cadastro de Tutor", size="8"),
             rx.text("Preencha os dados abaixo para cadastrar um novo cliente.", size="3"),
+            rx.link("Página inicial", href="/"),
             rx.link("Cadastrar Pet", href="/pets"),
             rx.link("Cadastrar Serviço", href="/servicos"),
             
@@ -352,8 +440,9 @@ def cadastro_pet() -> rx.Component:
         rx.vstack(
             rx.heading("Cadastro de Pet", size="8"),
             rx.text("Preencha os dados do pet e selecione seu tutor responsável.", size="3"),
-            rx.link("Voltar ao cadastro de tutor", href="/"),
+            rx.link("Voltar ao cadastro de tutor", href="/tutores"),
             rx.link("Cadastrar Serviço", href="/servicos"),
+            rx.link("Página inicial", href="/"),
             rx.vstack(
                 rx.text("Tutor responsável:"),
                 rx.cond(
@@ -572,8 +661,9 @@ def cadastro_servico() -> rx.Component:
         rx.vstack(
             rx.heading("Cadastro de Serviço", size="8"),
             rx.text("Cadastre um serviço oferecido pelo estabelecimento.", size="3"),
-            rx.link("Voltar ao cadastro de tutor", href="/"),
+            rx.link("Voltar ao cadastro de tutor", href="/tutores"),
             rx.link("Ir para cadastro de pet", href="/pets"),
+            rx.link("Página inicial", href="/"),
             rx.vstack(
                 rx.text("Nome:"),
                 rx.input(
@@ -638,7 +728,8 @@ def cadastro_servico() -> rx.Component:
 
 
 app = rx.App()
-app.add_page(index)
+app.add_page(login, route="/")
+app.add_page(index, route="/tutores")
 app.add_page(
     cadastro_pet,
     route="/pets",
