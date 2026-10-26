@@ -3,6 +3,12 @@ table pet {
 
   schema {
     int id
+    int tutor_id
+    text nome
+    text especie
+    text? raca?
+    text porte
+    text? observacoes_saude?
     timestamp created_at?=now {
       visibility = "private"
     }
@@ -10,6 +16,7 @@ table pet {
 
   index = [
     {type: "primary", field: [{name: "id"}]}
+    {type: "btree", field: [{name: "tutor_id"}]}
     {type: "btree", field: [{name: "created_at", op: "desc"}]}
   ]
 
