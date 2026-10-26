@@ -40,6 +40,7 @@ O domínio da aplicação engloba o ciclo de vida operacional do atendimento em 
 - **Atributos Conceituais:**
   - `id`: Identificador único do serviço no catálogo.
   - `nome`: Título do serviço (ex.: Banho & Tosa, Tosa Higiênica, Hidratação, Corte de Unha).
+  - `descricao`: Detalhamento opcional do serviço oferecido.
   - `preco`: Valor monetário cobrado pela prestação do serviço.
   - `duracao_minutos`: Tempo estimado em minutos para a conclusão do serviço.
 - **Relacionamentos:**

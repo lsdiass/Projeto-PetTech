@@ -3,6 +3,10 @@ table servico {
 
   schema {
     int id
+    text nome
+    text? descricao?
+    decimal preco
+    int duracao_minutos
     timestamp created_at?=now {
       visibility = "private"
     }
@@ -10,6 +14,7 @@ table servico {
 
   index = [
     {type: "primary", field: [{name: "id"}]}
+    {type: "btree", field: [{name: "nome"}]}
     {type: "btree", field: [{name: "created_at", op: "desc"}]}
   ]
 

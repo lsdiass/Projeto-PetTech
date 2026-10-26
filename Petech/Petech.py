@@ -1,5 +1,7 @@
 """Welcome to Reflex! This file outlines the steps to create a basic app."""
 
+from decimal import Decimal, InvalidOperation
+
 import httpx
 import reflex as rx
 
@@ -7,6 +9,14 @@ from rxconfig import config
 
 
 XANO_API_URL = "https://x8ki-letl-twmt.n7.xano.io/api:FxZRT-rM"
+
+
+def parse_preco(valor: str) -> Decimal:
+    """Converte valores monetários em formato brasileiro para Decimal."""
+    valor_limpo = valor.strip().replace("R$", "").replace(" ", "")
+    if "," in valor_limpo:
+        valor_limpo = valor_limpo.replace(".", "").replace(",", ".")
+    return Decimal(valor_limpo)
 
 
 class TutorState(rx.State):
@@ -84,6 +94,7 @@ def index() -> rx.Component:
             rx.heading("Cadastro de Tutor", size="8"),
             rx.text("Preencha os dados abaixo para cadastrar um novo cliente.", size="3"),
             rx.link("Cadastrar Pet", href="/pets"),
+            rx.link("Cadastrar Serviço", href="/servicos"),
             
             rx.vstack(
                 rx.text("Nome:"),
@@ -342,6 +353,7 @@ def cadastro_pet() -> rx.Component:
             rx.heading("Cadastro de Pet", size="8"),
             rx.text("Preencha os dados do pet e selecione seu tutor responsável.", size="3"),
             rx.link("Voltar ao cadastro de tutor", href="/"),
+            rx.link("Cadastrar Serviço", href="/servicos"),
             rx.vstack(
                 rx.text("Tutor responsável:"),
                 rx.cond(
@@ -424,6 +436,207 @@ def cadastro_pet() -> rx.Component:
     )
 
 
+class ServicoState(rx.State):
+    """Estado para gerenciar o cadastro de serviços."""
+    nome: str = ""
+    descricao: str = ""
+    preco: str = ""
+    duracao_minutos: str = ""
+    processando: bool = False
+    mensagem: str = ""
+    sucesso: bool = False
+
+    @rx.event
+    def set_nome(self, nome: str):
+        self.nome = nome
+
+    @rx.event
+    def set_descricao(self, descricao: str):
+        self.descricao = descricao
+
+    @rx.event
+    def set_preco(self, preco: str):
+        self.preco = preco
+
+    @rx.event
+    def set_duracao_minutos(self, duracao_minutos: str):
+        self.duracao_minutos = duracao_minutos
+
+    @rx.event
+    def registrar_servico(self):
+        """Valida e envia o cadastro do serviço ao Xano."""
+        nome = self.nome.strip()
+        descricao = self.descricao.strip()
+        if not nome:
+            self.mensagem = "O nome do serviço é obrigatório."
+            self.sucesso = False
+            return
+
+        try:
+            preco = parse_preco(self.preco)
+        except (InvalidOperation, ValueError):
+            self.mensagem = "Informe um valor válido, por exemplo 35,00."
+            self.sucesso = False
+            return
+        if not preco.is_finite() or preco <= 0:
+            self.mensagem = "O valor deve ser maior que zero."
+            self.sucesso = False
+            return
+
+        try:
+            duracao_minutos = int(self.duracao_minutos.strip())
+        except ValueError:
+            self.mensagem = "Informe a duração em minutos como número inteiro."
+            self.sucesso = False
+            return
+        if duracao_minutos <= 0:
+            self.mensagem = "A duração deve ser maior que zero."
+            self.sucesso = False
+            return
+
+        self.processando = True
+        self.mensagem = "Cadastrando serviço..."
+        self.sucesso = False
+
+        dados = {
+            "nome": nome,
+            "preco": float(preco),
+            "duracao_minutos": duracao_minutos,
+        }
+        if descricao:
+            dados["descricao"] = descricao
+
+        try:
+            response = httpx.post(
+                f"{XANO_API_URL}/servico",
+                json=dados,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            servico = response.json()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.mensagem = f"Erro no cadastro: {err_msg}"
+        except httpx.RequestError as error:
+            self.mensagem = f"Erro de conexão com o Xano: {error}"
+        except ValueError:
+            self.mensagem = "O Xano retornou uma resposta inválida."
+        else:
+            if not isinstance(servico, dict):
+                dados_confirmados = False
+            else:
+                try:
+                    preco_persistido = Decimal(str(servico.get("preco")))
+                    dados_confirmados = (
+                        servico.get("id") is not None
+                        and servico.get("nome") == nome
+                        and preco_persistido == preco
+                        and servico.get("duracao_minutos") == duracao_minutos
+                        and (
+                            not descricao
+                            or servico.get("descricao") == descricao
+                        )
+                    )
+                except (InvalidOperation, TypeError, ValueError):
+                    dados_confirmados = False
+
+            if not dados_confirmados:
+                self.mensagem = (
+                    "O Xano não confirmou a gravação dos dados do serviço. "
+                    "Verifique o schema e o endpoint POST /servico."
+                )
+            else:
+                self.mensagem = (
+                    f"Serviço cadastrado com sucesso! ID: {servico['id']}"
+                )
+                self.sucesso = True
+                self.nome = ""
+                self.descricao = ""
+                self.preco = ""
+                self.duracao_minutos = ""
+        finally:
+            self.processando = False
+
+
+def cadastro_servico() -> rx.Component:
+    return rx.container(
+        rx.color_mode.button(position="top-right"),
+        rx.vstack(
+            rx.heading("Cadastro de Serviço", size="8"),
+            rx.text("Cadastre um serviço oferecido pelo estabelecimento.", size="3"),
+            rx.link("Voltar ao cadastro de tutor", href="/"),
+            rx.link("Ir para cadastro de pet", href="/pets"),
+            rx.vstack(
+                rx.text("Nome:"),
+                rx.input(
+                    placeholder="Ex.: Banho, Tosa Higiênica",
+                    on_change=ServicoState.set_nome,
+                    value=ServicoState.nome,
+                    width="100%",
+                ),
+                rx.text("Descrição (opcional):"),
+                rx.text_area(
+                    placeholder="Detalhes sobre o serviço",
+                    on_change=ServicoState.set_descricao,
+                    value=ServicoState.descricao,
+                    width="100%",
+                ),
+                rx.text("Valor (R$):"),
+                rx.input(
+                    placeholder="Ex.: 35,00",
+                    type="text",
+                    input_mode="decimal",
+                    on_change=ServicoState.set_preco,
+                    value=ServicoState.preco,
+                    width="100%",
+                ),
+                rx.text("Duração média (minutos):"),
+                rx.input(
+                    placeholder="Ex.: 60",
+                    type="number",
+                    min="1",
+                    step="1",
+                    on_change=ServicoState.set_duracao_minutos,
+                    value=ServicoState.duracao_minutos,
+                    width="100%",
+                ),
+                rx.button(
+                    "Cadastrar Serviço",
+                    on_click=ServicoState.registrar_servico,
+                    loading=ServicoState.processando,
+                    width="100%",
+                    margin_top="10px",
+                ),
+                rx.cond(
+                    ServicoState.mensagem,
+                    rx.text(
+                        ServicoState.mensagem,
+                        color=rx.cond(ServicoState.sucesso, "green", "red"),
+                        size="2",
+                    ),
+                ),
+                width="400px",
+                padding="20px",
+                border="1px solid #ddd",
+                border_radius="10px",
+                spacing="3",
+            ),
+            spacing="5",
+            justify="center",
+            min_height="85vh",
+            align="center",
+        ),
+    )
+
+
 app = rx.App()
 app.add_page(index)
 app.add_page(
@@ -431,3 +644,4 @@ app.add_page(
     route="/pets",
     on_load=PetState.carregar_tutores,
 )
+app.add_page(cadastro_servico, route="/servicos")
