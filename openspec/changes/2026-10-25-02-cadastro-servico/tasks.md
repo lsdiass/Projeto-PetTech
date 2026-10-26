@@ -12,7 +12,7 @@
 - [x] **T-FT-02**: Criar formulário na rota `/servicos` com nome, descrição opcional, valor e duração em minutos.
 - [x] **T-FT-03**: Integrar o formulário ao `POST /servico`, convertendo o valor monetário de forma correta e tratando falhas HTTP, de conexão, respostas inválidas, sem ID ou com dados divergentes sem limpar os campos.
 - [x] **T-FT-04**: Adicionar navegação para o cadastro de serviços nas telas de tutor e pet, preservando as rotas existentes.
-- [ ] **T-FT-05**: Validar a compilação Reflex e os estados de sucesso confirmado e falha de confirmação do cadastro.
+- [x] **T-FT-05**: Validar a compilação Reflex e os estados de sucesso confirmado e falha de confirmação do cadastro.
 
 ## Documentação
 

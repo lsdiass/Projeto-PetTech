@@ -90,12 +90,24 @@ def formatar_data_hora_agendamento(valor: object) -> str | None:
 
 
 class TutorState(rx.State):
-    """Estado para gerenciar o cadastro de tutores."""
+    """Estado para gerenciar cadastro, listagem e edição de tutores."""
     nome: str = ""
     email: str = ""
     telefone: str = ""
     processando: bool = False
     mensagem: str = ""
+    tutores: list[dict[str, str]] = []
+    tem_tutores: bool = False
+    carregando_tutores: bool = False
+    erro_lista: str = ""
+    tutor_id_edicao: str = ""
+    nome_edicao: str = ""
+    email_edicao: str = ""
+    telefone_edicao: str = ""
+    editando: bool = False
+    processando_edicao: bool = False
+    mensagem_edicao: str = ""
+    sucesso_edicao: bool = False
 
     def set_nome(self, nome: str):
         self.nome = nome
@@ -105,6 +117,202 @@ class TutorState(rx.State):
 
     def set_telefone(self, telefone: str):
         self.telefone = telefone
+
+    def set_nome_edicao(self, nome: str):
+        self.nome_edicao = nome
+
+    def set_email_edicao(self, email: str):
+        self.email_edicao = email
+
+    def set_telefone_edicao(self, telefone: str):
+        self.telefone_edicao = telefone
+
+    def carregar_tutores(self):
+        """Carrega os tutores existentes para a lista de edição."""
+        self.carregando_tutores = True
+        self.erro_lista = ""
+
+        try:
+            response = httpx.get(f"{XANO_API_URL}/tutor", timeout=10.0)
+            response.raise_for_status()
+            tutores = response.json()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.erro_lista = f"Erro ao carregar tutores: {err_msg}"
+            self.tutores = []
+            self.tem_tutores = False
+        except httpx.RequestError as error:
+            self.erro_lista = f"Erro de conexão ao carregar tutores: {error}"
+            self.tutores = []
+            self.tem_tutores = False
+        except ValueError:
+            self.erro_lista = "O Xano retornou uma lista de tutores inválida."
+            self.tutores = []
+            self.tem_tutores = False
+        else:
+            if not isinstance(tutores, list):
+                self.erro_lista = "O Xano retornou uma lista de tutores inválida."
+                self.tutores = []
+                self.tem_tutores = False
+            else:
+                tutores_validos: list[dict[str, str]] = []
+                for tutor in tutores:
+                    if not isinstance(tutor, dict):
+                        self.erro_lista = (
+                            "O Xano retornou um tutor com dados inválidos."
+                        )
+                        break
+
+                    tutor_id = normalizar_id(tutor.get("id"))
+                    nome = tutor.get("nome")
+                    email = tutor.get("email")
+                    telefone = tutor.get("telefone")
+                    if (
+                        tutor_id is None
+                        or not isinstance(nome, str)
+                        or not nome.strip()
+                        or (email is not None and not isinstance(email, str))
+                        or (
+                            telefone is not None
+                            and not isinstance(telefone, str)
+                        )
+                    ):
+                        self.erro_lista = (
+                            "O Xano retornou um tutor sem identificador "
+                            "ou com dados inválidos."
+                        )
+                        break
+
+                    tutores_validos.append(
+                        {
+                            "id": tutor_id,
+                            "nome": nome.strip(),
+                            "email": email or "",
+                            "telefone": telefone or "",
+                        }
+                    )
+
+                if self.erro_lista:
+                    self.tutores = []
+                    self.tem_tutores = False
+                else:
+                    self.tutores = tutores_validos
+                    self.tem_tutores = bool(tutores_validos)
+                    if not self.tutores:
+                        self.erro_lista = "Nenhum tutor cadastrado."
+        finally:
+            self.carregando_tutores = False
+
+    def iniciar_edicao(self, tutor_id: str):
+        tutor = next(
+            (item for item in self.tutores if item["id"] == tutor_id),
+            None,
+        )
+        if tutor is None:
+            self.erro_lista = "Não foi possível localizar o tutor selecionado."
+            return
+
+        self.tutor_id_edicao = tutor["id"]
+        self.nome_edicao = tutor["nome"]
+        self.email_edicao = tutor["email"]
+        self.telefone_edicao = tutor["telefone"]
+        self.mensagem_edicao = ""
+        self.sucesso_edicao = False
+        self.editando = True
+
+    def cancelar_edicao(self):
+        if self.processando_edicao:
+            return
+        self.editando = False
+        self.tutor_id_edicao = ""
+        self.nome_edicao = ""
+        self.email_edicao = ""
+        self.telefone_edicao = ""
+        self.mensagem_edicao = ""
+        self.sucesso_edicao = False
+
+    def salvar_edicao(self):
+        tutor_id = normalizar_id(self.tutor_id_edicao)
+        nome = self.nome_edicao.strip()
+        email = self.email_edicao.strip() or None
+        telefone = self.telefone_edicao.strip() or None
+        if tutor_id is None:
+            self.mensagem_edicao = "Selecione um tutor válido para editar."
+            self.sucesso_edicao = False
+            return
+        if not nome:
+            self.mensagem_edicao = "O nome é obrigatório."
+            self.sucesso_edicao = False
+            return
+
+        self.processando_edicao = True
+        self.mensagem_edicao = "Salvando alterações..."
+        self.sucesso_edicao = False
+        dados = {
+            "nome": nome,
+            "email": email,
+            "telefone": telefone,
+        }
+
+        try:
+            response = httpx.patch(
+                f"{XANO_API_URL}/tutor/{tutor_id}",
+                json=dados,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            tutor_atualizado = response.json()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.mensagem_edicao = f"Erro ao alterar tutor: {err_msg}"
+        except httpx.RequestError as error:
+            self.mensagem_edicao = f"Erro de conexão com o Xano: {error}"
+        except ValueError:
+            self.mensagem_edicao = "O Xano retornou uma resposta inválida."
+        else:
+            dados_confirmados = (
+                isinstance(tutor_atualizado, dict)
+                and normalizar_id(tutor_atualizado.get("id")) == tutor_id
+                and tutor_atualizado.get("nome") == nome
+                and tutor_atualizado.get("email") == email
+                and tutor_atualizado.get("telefone") == telefone
+            )
+            if not dados_confirmados:
+                self.mensagem_edicao = (
+                    "O Xano não confirmou a alteração dos dados do tutor."
+                )
+            else:
+                self.mensagem_edicao = "Tutor alterado com sucesso."
+                self.sucesso_edicao = True
+                self.tutores = [
+                    {
+                        "id": tutor_id,
+                        "nome": nome,
+                        "email": email or "",
+                        "telefone": telefone or "",
+                    }
+                    if tutor["id"] == tutor_id
+                    else tutor
+                    for tutor in self.tutores
+                ]
+        finally:
+            self.processando_edicao = False
 
     def signup_tutor(self):
         """Função para processar o cadastro do tutor."""
@@ -147,13 +355,30 @@ class TutorState(rx.State):
         except ValueError:
             self.mensagem = "O Xano retornou uma resposta inválida."
         else:
-            if not isinstance(tutor, dict) or tutor.get("id") is None:
+            tutor_id = (
+                normalizar_id(tutor.get("id"))
+                if isinstance(tutor, dict)
+                else None
+            )
+            if tutor_id is None:
                 self.mensagem = "O Xano não confirmou a gravação do tutor."
             else:
-                self.mensagem = f"Tutor cadastrado com sucesso! ID: {tutor['id']}"
+                self.mensagem = f"Tutor cadastrado com sucesso! ID: {tutor_id}"
                 self.nome = ""
                 self.email = ""
                 self.telefone = ""
+                self.tutores = [
+                    item for item in self.tutores if item["id"] != tutor_id
+                ]
+                self.tutores.append(
+                    {
+                        "id": tutor_id,
+                        "nome": nome,
+                        "email": dados.get("email", ""),
+                        "telefone": dados.get("telefone", ""),
+                    }
+                )
+                self.tem_tutores = True
         finally:
             self.processando = False
 
@@ -240,7 +465,14 @@ def index() -> rx.Component:
         rx.color_mode.button(position="top-right"),
         rx.vstack(
             rx.heading("Cadastro de Tutor", size="8"),
-            rx.text("Preencha os dados abaixo para cadastrar um novo cliente.", size="3"),
+            rx.text(
+                rx.cond(
+                    TutorState.editando,
+                    "Altere os dados do tutor selecionado.",
+                    "Preencha os dados abaixo para cadastrar um novo cliente.",
+                ),
+                size="3",
+            ),
             rx.link("Página inicial", href="/"),
             rx.link("Cadastrar Pet", href="/pets"),
             rx.link("Cadastrar Serviço", href="/servicos"),
@@ -248,43 +480,155 @@ def index() -> rx.Component:
             rx.link("Consultar agendamentos", href="/agendamentos/lista"),
             
             rx.vstack(
-                rx.text("Nome:"),
-                rx.input(
-                    placeholder="Digite o nome completo",
-                    on_change=TutorState.set_nome,
-                    value=TutorState.nome,
-                    width="100%",
-                ),
-                rx.text("E-mail:"),
-                rx.input(
-                    placeholder="email@exemplo.com",
-                    on_change=TutorState.set_email,
-                    value=TutorState.email,
-                    width="100%",
-                ),
-                rx.text("Telefone:"),
-                rx.input(
-                    placeholder="(00) 00000-0000",
-                    on_change=TutorState.set_telefone,
-                    value=TutorState.telefone,
-                    width="100%",
-                ),
-                rx.button(
-                    "Cadastrar",
-                    on_click=TutorState.signup_tutor,
-                    loading=TutorState.processando,
-                    width="100%",
-                    margin_top="10px",
-                ),
                 rx.cond(
-                    TutorState.mensagem,
-                    rx.text(TutorState.mensagem, color="blue", size="2"),
+                    TutorState.editando,
+                    rx.vstack(
+                        rx.heading("Editar Tutor", size="5"),
+                        rx.text("Nome:"),
+                        rx.input(
+                            placeholder="Digite o nome completo",
+                            on_change=TutorState.set_nome_edicao,
+                            value=TutorState.nome_edicao,
+                            width="100%",
+                        ),
+                        rx.text("E-mail:"),
+                        rx.input(
+                            placeholder="email@exemplo.com",
+                            type="email",
+                            on_change=TutorState.set_email_edicao,
+                            value=TutorState.email_edicao,
+                            width="100%",
+                        ),
+                        rx.text("Telefone:"),
+                        rx.input(
+                            placeholder="(00) 00000-0000",
+                            on_change=TutorState.set_telefone_edicao,
+                            value=TutorState.telefone_edicao,
+                            width="100%",
+                        ),
+                        rx.hstack(
+                            rx.button(
+                                "Salvar alterações",
+                                on_click=TutorState.salvar_edicao,
+                                loading=TutorState.processando_edicao,
+                            ),
+                            rx.button(
+                                "Cancelar",
+                                on_click=TutorState.cancelar_edicao,
+                                disabled=TutorState.processando_edicao,
+                                variant="outline",
+                            ),
+                        ),
+                        rx.cond(
+                            TutorState.mensagem_edicao,
+                            rx.text(
+                                TutorState.mensagem_edicao,
+                                color=rx.cond(
+                                    TutorState.sucesso_edicao,
+                                    "green",
+                                    "red",
+                                ),
+                                size="2",
+                            ),
+                        ),
+                        width="100%",
+                        spacing="3",
+                    ),
+                    rx.vstack(
+                        rx.text("Nome:"),
+                        rx.input(
+                            placeholder="Digite o nome completo",
+                            on_change=TutorState.set_nome,
+                            value=TutorState.nome,
+                            width="100%",
+                        ),
+                        rx.text("E-mail:"),
+                        rx.input(
+                            placeholder="email@exemplo.com",
+                            on_change=TutorState.set_email,
+                            value=TutorState.email,
+                            width="100%",
+                        ),
+                        rx.text("Telefone:"),
+                        rx.input(
+                            placeholder="(00) 00000-0000",
+                            on_change=TutorState.set_telefone,
+                            value=TutorState.telefone,
+                            width="100%",
+                        ),
+                        rx.button(
+                            "Cadastrar",
+                            on_click=TutorState.signup_tutor,
+                            loading=TutorState.processando,
+                            width="100%",
+                            margin_top="10px",
+                        ),
+                        rx.cond(
+                            TutorState.mensagem,
+                            rx.text(
+                                TutorState.mensagem, color="blue", size="2"
+                            ),
+                        ),
+                        width="100%",
+                        spacing="3",
+                    ),
                 ),
                 width="400px",
                 padding="20px",
                 border="1px solid #ddd",
                 border_radius="10px",
                 spacing="3",
+            ),
+            rx.heading("Tutores cadastrados", size="5"),
+            rx.cond(
+                TutorState.carregando_tutores,
+                rx.text("Carregando tutores..."),
+                rx.cond(
+                    TutorState.tem_tutores,
+                    rx.vstack(
+                        rx.foreach(
+                            TutorState.tutores,
+                            lambda tutor: rx.hstack(
+                                rx.vstack(
+                                    rx.text(tutor["nome"], weight="bold"),
+                                    rx.text(
+                                        rx.cond(
+                                            tutor["email"] != "",
+                                            tutor["email"],
+                                            "E-mail não informado",
+                                        ),
+                                        size="2",
+                                    ),
+                                    rx.text(
+                                        rx.cond(
+                                            tutor["telefone"] != "",
+                                            tutor["telefone"],
+                                            "Telefone não informado",
+                                        ),
+                                        size="2",
+                                    ),
+                                    align="start",
+                                ),
+                                rx.button(
+                                    "Editar",
+                                    on_click=TutorState.iniciar_edicao(
+                                        tutor["id"]
+                                    ),
+                                    disabled=TutorState.processando_edicao,
+                                ),
+                                justify="between",
+                                align="center",
+                                width="100%",
+                                padding="12px",
+                                border="1px solid #ddd",
+                                border_radius="8px",
+                            ),
+                        ),
+                        width="100%",
+                        max_width="600px",
+                    ),
+                    rx.text(TutorState.erro_lista),
+                ),
             ),
             spacing="5",
             justify="center",
@@ -295,7 +639,7 @@ def index() -> rx.Component:
 
 
 class PetState(rx.State):
-    """Estado para gerenciar o cadastro de pets."""
+    """Estado para gerenciar cadastro e alteração de pets."""
     opcoes_tutor: list[str] = []
     tutor_id: str = ""
     tutor_selecionado: str = ""
@@ -309,6 +653,22 @@ class PetState(rx.State):
     erro_tutores: str = ""
     mensagem: str = ""
     sucesso: bool = False
+    pets: list[dict[str, str]] = []
+    tem_pets: bool = False
+    carregando_pets: bool = False
+    erro_lista_pets: str = ""
+    pet_id_edicao: str = ""
+    tutor_id_edicao: str = ""
+    tutor_selecionado_edicao: str = ""
+    nome_edicao: str = ""
+    especie_edicao: str = ""
+    raca_edicao: str = ""
+    porte_edicao: str = ""
+    observacoes_saude_edicao: str = ""
+    editando: bool = False
+    processando_edicao: bool = False
+    mensagem_edicao: str = ""
+    sucesso_edicao: bool = False
 
     @rx.event
     def carregar_tutores(self):
@@ -365,6 +725,293 @@ class PetState(rx.State):
                     )
         finally:
             self.carregando_tutores = False
+
+    @rx.event
+    def carregar_pets(self):
+        """Carrega os pets existentes para a lista de edição."""
+        self.carregando_pets = True
+        self.erro_lista_pets = ""
+
+        try:
+            response = httpx.get(f"{XANO_API_URL}/pet", timeout=10.0)
+            response.raise_for_status()
+            pets = response.json()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.erro_lista_pets = f"Erro ao carregar pets: {err_msg}"
+            self.pets = []
+            self.tem_pets = False
+        except httpx.RequestError as error:
+            self.erro_lista_pets = f"Erro de conexão ao carregar pets: {error}"
+            self.pets = []
+            self.tem_pets = False
+        except ValueError:
+            self.erro_lista_pets = "O Xano retornou uma lista de pets inválida."
+            self.pets = []
+            self.tem_pets = False
+        else:
+            if not isinstance(pets, list):
+                self.erro_lista_pets = "O Xano retornou uma lista de pets inválida."
+                self.pets = []
+                self.tem_pets = False
+            else:
+                pets_validos: list[dict[str, str]] = []
+                registros_incompletos = 0
+                for pet in pets:
+                    if not isinstance(pet, dict):
+                        registros_incompletos += 1
+                        continue
+
+                    pet_id = normalizar_id(pet.get("id"))
+                    if pet_id is None:
+                        registros_incompletos += 1
+                        continue
+
+                    tutor_id = normalizar_id(pet.get("tutor_id")) or ""
+                    nome = pet.get("nome")
+                    nome = nome.strip() if isinstance(nome, str) else ""
+                    especie = pet.get("especie")
+                    especie = especie.strip() if isinstance(especie, str) else ""
+                    porte = pet.get("porte")
+                    porte = (
+                        porte
+                        if porte in ["Pequeno", "Médio", "Grande"]
+                        else ""
+                    )
+                    raca = pet.get("raca")
+                    raca = raca.strip() if isinstance(raca, str) else ""
+                    observacoes = pet.get("observacoes_saude")
+                    observacoes = (
+                        observacoes.strip()
+                        if isinstance(observacoes, str)
+                        else ""
+                    )
+                    dados_incompletos = not all(
+                        [tutor_id, nome, especie, porte]
+                    )
+                    if dados_incompletos:
+                        registros_incompletos += 1
+
+                    pets_validos.append(
+                        {
+                            "id": pet_id,
+                            "tutor_id": tutor_id,
+                            "nome": nome.strip(),
+                            "especie": especie.strip(),
+                            "raca": raca or "",
+                            "porte": porte,
+                            "observacoes_saude": observacoes or "",
+                            "dados_incompletos": (
+                                "true" if dados_incompletos else "false"
+                            ),
+                        }
+                    )
+
+                self.pets = pets_validos
+                self.tem_pets = bool(pets_validos)
+                if registros_incompletos:
+                    self.erro_lista_pets = (
+                        f"{registros_incompletos} pet(s) com dados obrigatórios "
+                        "incompletos. Use Editar para preencher os campos ausentes."
+                    )
+                elif not pets_validos:
+                    self.erro_lista_pets = "Nenhum pet cadastrado."
+        finally:
+            self.carregando_pets = False
+
+    @rx.event
+    def iniciar_edicao(self, pet_id: str):
+        pet = next((item for item in self.pets if item["id"] == pet_id), None)
+        if pet is None:
+            self.erro_lista_pets = "Não foi possível localizar o pet selecionado."
+            return
+
+        tutor_selecionado = next(
+            (
+                opcao
+                for opcao in self.opcoes_tutor
+                if opcao.split(" - ", 1)[0] == pet["tutor_id"]
+            ),
+            "",
+        )
+        if pet["tutor_id"] and not tutor_selecionado:
+            self.mensagem_edicao = (
+                "O tutor deste pet não está disponível. Atualize a lista de tutores."
+            )
+            self.sucesso_edicao = False
+            return
+
+        self.pet_id_edicao = pet["id"]
+        self.tutor_id_edicao = pet["tutor_id"]
+        self.tutor_selecionado_edicao = tutor_selecionado
+        self.nome_edicao = pet["nome"]
+        self.especie_edicao = pet["especie"]
+        self.raca_edicao = pet["raca"]
+        self.porte_edicao = pet["porte"]
+        self.observacoes_saude_edicao = pet["observacoes_saude"]
+        self.mensagem_edicao = ""
+        self.sucesso_edicao = False
+        self.editando = True
+
+    @rx.event
+    def set_tutor_selecionado_edicao(self, tutor_selecionado: str):
+        self.tutor_selecionado_edicao = tutor_selecionado
+        self.tutor_id_edicao = tutor_selecionado.split(" - ", 1)[0]
+
+    @rx.event
+    def set_nome_edicao(self, nome: str):
+        self.nome_edicao = nome
+
+    @rx.event
+    def set_especie_edicao(self, especie: str):
+        self.especie_edicao = especie
+
+    @rx.event
+    def set_raca_edicao(self, raca: str):
+        self.raca_edicao = raca
+
+    @rx.event
+    def set_porte_edicao(self, porte: str):
+        self.porte_edicao = porte
+
+    @rx.event
+    def set_observacoes_saude_edicao(self, observacoes_saude: str):
+        self.observacoes_saude_edicao = observacoes_saude
+
+    @rx.event
+    def cancelar_edicao(self):
+        if self.processando_edicao:
+            return
+        self.editando = False
+        self.pet_id_edicao = ""
+        self.tutor_id_edicao = ""
+        self.tutor_selecionado_edicao = ""
+        self.nome_edicao = ""
+        self.especie_edicao = ""
+        self.raca_edicao = ""
+        self.porte_edicao = ""
+        self.observacoes_saude_edicao = ""
+        self.mensagem_edicao = ""
+        self.sucesso_edicao = False
+
+    @rx.event
+    def salvar_edicao(self):
+        pet_id = normalizar_id(self.pet_id_edicao)
+        tutor_id = normalizar_id(self.tutor_id_edicao)
+        nome = self.nome_edicao.strip()
+        especie = self.especie_edicao.strip()
+        raca = self.raca_edicao.strip() or None
+        porte = self.porte_edicao
+        observacoes = self.observacoes_saude_edicao.strip() or None
+        tutor_valido = any(
+            opcao.split(" - ", 1)[0] == self.tutor_id_edicao
+            for opcao in self.opcoes_tutor
+        )
+
+        if pet_id is None:
+            self.mensagem_edicao = "Selecione um pet válido para editar."
+        elif tutor_id is None or not tutor_valido:
+            self.mensagem_edicao = "Selecione um tutor cadastrado."
+        elif not nome:
+            self.mensagem_edicao = "O nome do pet é obrigatório."
+        elif not especie:
+            self.mensagem_edicao = "A espécie do pet é obrigatória."
+        elif porte not in ["Pequeno", "Médio", "Grande"]:
+            self.mensagem_edicao = "Selecione um porte válido."
+        else:
+            self.mensagem_edicao = ""
+
+        if self.mensagem_edicao:
+            self.sucesso_edicao = False
+            return
+
+        self.processando_edicao = True
+        self.mensagem_edicao = "Salvando alterações..."
+        self.sucesso_edicao = False
+        dados = {
+            "tutor_id": int(tutor_id),
+            "nome": nome,
+            "especie": especie,
+            "raca": raca,
+            "porte": porte,
+            "observacoes_saude": observacoes,
+        }
+
+        try:
+            response = httpx.patch(
+                f"{XANO_API_URL}/pet/{pet_id}",
+                json=dados,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            pet_atualizado = response.json()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.mensagem_edicao = f"Erro ao alterar pet: {err_msg}"
+        except httpx.RequestError as error:
+            self.mensagem_edicao = f"Erro de conexão com o Xano: {error}"
+        except ValueError:
+            self.mensagem_edicao = "O Xano retornou uma resposta inválida."
+        else:
+            dados_confirmados = (
+                isinstance(pet_atualizado, dict)
+                and normalizar_id(pet_atualizado.get("id")) == pet_id
+                and normalizar_id(pet_atualizado.get("tutor_id")) == tutor_id
+                and pet_atualizado.get("nome") == nome
+                and pet_atualizado.get("especie") == especie
+                and pet_atualizado.get("raca") == raca
+                and pet_atualizado.get("porte") == porte
+                and pet_atualizado.get("observacoes_saude") == observacoes
+            )
+            if not dados_confirmados:
+                self.mensagem_edicao = (
+                    "O Xano não confirmou a alteração dos dados do pet."
+                )
+            else:
+                self.mensagem_edicao = "Pet alterado com sucesso."
+                self.sucesso_edicao = True
+                self.pets = [
+                    {
+                        "id": pet_id,
+                        "tutor_id": tutor_id,
+                        "nome": nome,
+                        "especie": especie,
+                        "raca": raca or "",
+                        "porte": porte,
+                        "observacoes_saude": observacoes or "",
+                        "dados_incompletos": "false",
+                    }
+                    if pet["id"] == pet_id
+                    else pet
+                    for pet in self.pets
+                ]
+                registros_incompletos = sum(
+                    pet["dados_incompletos"] == "true" for pet in self.pets
+                )
+                self.erro_lista_pets = (
+                    f"{registros_incompletos} pet(s) com dados obrigatórios "
+                    "incompletos. Use Editar para preencher os campos ausentes."
+                    if registros_incompletos
+                    else ""
+                )
+        finally:
+            self.processando_edicao = False
 
     @rx.event
     def set_tutor_selecionado(self, tutor_selecionado: str):
@@ -486,6 +1133,22 @@ class PetState(rx.State):
             else:
                 self.mensagem = f"Pet cadastrado com sucesso! ID: {pet['id']}"
                 self.sucesso = True
+                pet_id = normalizar_id(pet.get("id"))
+                if pet_id is not None:
+                    self.pets.append(
+                        {
+                            "id": pet_id,
+                            "tutor_id": self.tutor_id,
+                            "nome": nome,
+                            "especie": especie,
+                            "raca": dados.get("raca", ""),
+                            "porte": self.porte,
+                            "observacoes_saude": dados.get(
+                                "observacoes_saude", ""
+                            ),
+                        }
+                    )
+                    self.tem_pets = True
                 self.nome = ""
                 self.especie = ""
                 self.raca = ""
@@ -508,6 +1171,84 @@ def cadastro_pet() -> rx.Component:
             rx.link("Agendar atendimento", href="/agendamentos"),
             rx.link("Consultar agendamentos", href="/agendamentos/lista"),
             rx.link("Página inicial", href="/"),
+            rx.cond(
+                PetState.editando,
+                rx.vstack(
+                    rx.heading("Editar Pet", size="5"),
+                    rx.text("Tutor responsável:"),
+                    rx.select(
+                        PetState.opcoes_tutor,
+                        value=PetState.tutor_selecionado_edicao,
+                        on_change=PetState.set_tutor_selecionado_edicao,
+                        placeholder="Selecione um tutor",
+                        width="100%",
+                    ),
+                    rx.text("Nome:"),
+                    rx.input(
+                        value=PetState.nome_edicao,
+                        on_change=PetState.set_nome_edicao,
+                        width="100%",
+                    ),
+                    rx.text("Espécie:"),
+                    rx.input(
+                        value=PetState.especie_edicao,
+                        on_change=PetState.set_especie_edicao,
+                        width="100%",
+                    ),
+                    rx.text("Raça (opcional):"),
+                    rx.input(
+                        value=PetState.raca_edicao,
+                        on_change=PetState.set_raca_edicao,
+                        width="100%",
+                    ),
+                    rx.text("Porte:"),
+                    rx.select(
+                        ["Pequeno", "Médio", "Grande"],
+                        value=PetState.porte_edicao,
+                        on_change=PetState.set_porte_edicao,
+                        placeholder="Selecione o porte",
+                        width="100%",
+                    ),
+                    rx.text("Observações de saúde e comportamento (opcional):"),
+                    rx.text_area(
+                        value=PetState.observacoes_saude_edicao,
+                        on_change=PetState.set_observacoes_saude_edicao,
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        rx.button(
+                            "Salvar alterações",
+                            on_click=PetState.salvar_edicao,
+                            loading=PetState.processando_edicao,
+                        ),
+                        rx.button(
+                            "Cancelar",
+                            on_click=PetState.cancelar_edicao,
+                            disabled=PetState.processando_edicao,
+                            variant="outline",
+                        ),
+                    ),
+                    rx.cond(
+                        PetState.mensagem_edicao,
+                        rx.text(
+                            PetState.mensagem_edicao,
+                            color=rx.cond(
+                                PetState.sucesso_edicao,
+                                "green",
+                                "red",
+                            ),
+                            size="2",
+                        ),
+                    ),
+                    width="100%",
+                    max_width="600px",
+                    padding="20px",
+                    border="1px solid #ddd",
+                    border_radius="10px",
+                    spacing="3",
+                ),
+                rx.text(""),
+            ),
             rx.vstack(
                 rx.text("Tutor responsável:"),
                 rx.cond(
@@ -582,6 +1323,91 @@ def cadastro_pet() -> rx.Component:
                 border_radius="10px",
                 spacing="3",
             ),
+            rx.heading("Pets cadastrados", size="5"),
+            rx.cond(
+                PetState.carregando_pets,
+                rx.text("Carregando pets..."),
+                rx.cond(
+                    PetState.tem_pets,
+                    rx.vstack(
+                        rx.cond(
+                            PetState.erro_lista_pets,
+                            rx.text(
+                                PetState.erro_lista_pets,
+                                color="orange",
+                                size="2",
+                            ),
+                        ),
+                        rx.foreach(
+                            PetState.pets,
+                            lambda pet: rx.hstack(
+                                rx.vstack(
+                                    rx.text(
+                                        rx.cond(
+                                            pet["nome"] != "",
+                                            pet["nome"],
+                                            "Nome não informado",
+                                        ),
+                                        weight="bold",
+                                    ),
+                                    rx.text(
+                                        rx.cond(
+                                            pet["especie"] != "",
+                                            pet["especie"],
+                                            "Espécie não informada",
+                                        )
+                                        + " · "
+                                        + rx.cond(
+                                            pet["porte"] != "",
+                                            pet["porte"],
+                                            "Porte não informado",
+                                        )
+                                    ),
+                                    rx.text(
+                                        rx.cond(
+                                            pet["tutor_id"] != "",
+                                            "Tutor ID: " + pet["tutor_id"],
+                                            "Tutor não informado",
+                                        ),
+                                        size="2",
+                                    ),
+                                    rx.text(
+                                        rx.cond(
+                                            pet["raca"] != "",
+                                            "Raça: " + pet["raca"],
+                                            "Raça não informada",
+                                        ),
+                                        size="2",
+                                    ),
+                                    rx.cond(
+                                        pet["dados_incompletos"] == "true",
+                                        rx.text(
+                                            "Dados incompletos — edite para preencher",
+                                            color="orange",
+                                            size="2",
+                                        ),
+                                    ),
+                                    align="start",
+                                ),
+                                rx.button(
+                                    "Editar",
+                                    on_click=PetState.iniciar_edicao(pet["id"]),
+                                    disabled=PetState.processando_edicao,
+                                ),
+                                justify="between",
+                                align="center",
+                                width="100%",
+                                padding="12px",
+                                border="1px solid #ddd",
+                                border_radius="8px",
+                            ),
+                        ),
+                        width="100%",
+                        max_width="600px",
+                    ),
+                    rx.text(PetState.erro_lista_pets),
+                ),
+            ),
             spacing="5",
             justify="center",
             min_height="85vh",
@@ -591,7 +1417,7 @@ def cadastro_pet() -> rx.Component:
 
 
 class ServicoState(rx.State):
-    """Estado para gerenciar o cadastro de serviços."""
+    """Estado para gerenciar cadastro e alteração de serviços."""
     nome: str = ""
     descricao: str = ""
     preco: str = ""
@@ -599,6 +1425,312 @@ class ServicoState(rx.State):
     processando: bool = False
     mensagem: str = ""
     sucesso: bool = False
+    servicos: list[dict[str, str]] = []
+    tem_servicos: bool = False
+    carregando_servicos: bool = False
+    erro_lista_servicos: str = ""
+    servico_id_edicao: str = ""
+    nome_edicao: str = ""
+    descricao_edicao: str = ""
+    preco_edicao: str = ""
+    duracao_minutos_edicao: str = ""
+    editando: bool = False
+    processando_edicao: bool = False
+    mensagem_edicao: str = ""
+    sucesso_edicao: bool = False
+
+    @rx.event
+    def carregar_servicos(self):
+        """Carrega os serviços existentes para a lista de edição."""
+        self.carregando_servicos = True
+        self.erro_lista_servicos = ""
+
+        try:
+            response = httpx.get(f"{XANO_API_URL}/servico", timeout=10.0)
+            response.raise_for_status()
+            servicos = response.json()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.erro_lista_servicos = f"Erro ao carregar serviços: {err_msg}"
+            self.servicos = []
+            self.tem_servicos = False
+        except httpx.RequestError as error:
+            self.erro_lista_servicos = (
+                f"Erro de conexão ao carregar serviços: {error}"
+            )
+            self.servicos = []
+            self.tem_servicos = False
+        except ValueError:
+            self.erro_lista_servicos = (
+                "O Xano retornou uma lista de serviços inválida."
+            )
+            self.servicos = []
+            self.tem_servicos = False
+        else:
+            if not isinstance(servicos, list):
+                self.erro_lista_servicos = (
+                    "O Xano retornou uma lista de serviços inválida."
+                )
+                self.servicos = []
+                self.tem_servicos = False
+            else:
+                servicos_validos: list[dict[str, str]] = []
+                registros_incompletos = 0
+                for servico in servicos:
+                    if not isinstance(servico, dict):
+                        registros_incompletos += 1
+                        continue
+
+                    servico_id = normalizar_id(servico.get("id"))
+                    if servico_id is None:
+                        registros_incompletos += 1
+                        continue
+
+                    nome = servico.get("nome")
+                    nome = nome.strip() if isinstance(nome, str) else ""
+                    descricao = servico.get("descricao")
+                    descricao = (
+                        descricao.strip() if isinstance(descricao, str) else ""
+                    )
+                    try:
+                        preco = Decimal(str(servico.get("preco")))
+                        preco_valido = preco.is_finite() and preco > 0
+                    except (InvalidOperation, TypeError, ValueError):
+                        preco = Decimal("NaN")
+                        preco_valido = False
+                    duracao = servico.get("duracao_minutos")
+                    duracao_valida = (
+                        isinstance(duracao, int)
+                        and not isinstance(duracao, bool)
+                        and duracao > 0
+                    )
+                    dados_incompletos = not (
+                        nome and preco_valido and duracao_valida
+                    )
+                    if dados_incompletos:
+                        registros_incompletos += 1
+
+                    servicos_validos.append(
+                        {
+                            "id": servico_id,
+                            "nome": nome,
+                            "descricao": descricao,
+                            "preco": format(preco, "f") if preco_valido else "",
+                            "preco_exibicao": (
+                                f"R$ {preco:.2f}".replace(".", ",")
+                                if preco_valido
+                                else "Valor não informado"
+                            ),
+                            "duracao_minutos": (
+                                str(duracao) if duracao_valida else ""
+                            ),
+                            "dados_incompletos": (
+                                "true" if dados_incompletos else "false"
+                            ),
+                        }
+                    )
+
+                self.servicos = servicos_validos
+                self.tem_servicos = bool(servicos_validos)
+                if registros_incompletos:
+                    self.erro_lista_servicos = (
+                        f"{registros_incompletos} serviço(s) com dados obrigatórios "
+                        "incompletos. Use Editar para preencher os campos ausentes."
+                    )
+                elif not servicos_validos:
+                    self.erro_lista_servicos = "Nenhum serviço cadastrado."
+        finally:
+            self.carregando_servicos = False
+
+    @rx.event
+    def iniciar_edicao(self, servico_id: str):
+        servico = next(
+            (item for item in self.servicos if item["id"] == servico_id),
+            None,
+        )
+        if servico is None:
+            self.erro_lista_servicos = (
+                "Não foi possível localizar o serviço selecionado."
+            )
+            return
+
+        self.servico_id_edicao = servico["id"]
+        self.nome_edicao = servico["nome"]
+        self.descricao_edicao = servico["descricao"]
+        self.preco_edicao = servico["preco"].replace(".", ",")
+        self.duracao_minutos_edicao = servico["duracao_minutos"]
+        self.mensagem_edicao = ""
+        self.sucesso_edicao = False
+        self.editando = True
+
+    @rx.event
+    def set_nome_edicao(self, nome: str):
+        self.nome_edicao = nome
+
+    @rx.event
+    def set_descricao_edicao(self, descricao: str):
+        self.descricao_edicao = descricao
+
+    @rx.event
+    def set_preco_edicao(self, preco: str):
+        self.preco_edicao = preco
+
+    @rx.event
+    def set_duracao_minutos_edicao(self, duracao_minutos: str):
+        self.duracao_minutos_edicao = duracao_minutos
+
+    @rx.event
+    def cancelar_edicao(self):
+        if self.processando_edicao:
+            return
+        self.editando = False
+        self.servico_id_edicao = ""
+        self.nome_edicao = ""
+        self.descricao_edicao = ""
+        self.preco_edicao = ""
+        self.duracao_minutos_edicao = ""
+        self.mensagem_edicao = ""
+        self.sucesso_edicao = False
+
+    @rx.event
+    def salvar_edicao(self):
+        servico_id = normalizar_id(self.servico_id_edicao)
+        nome = self.nome_edicao.strip()
+        descricao = self.descricao_edicao.strip() or None
+
+        if servico_id is None:
+            self.mensagem_edicao = "Selecione um serviço válido para editar."
+            self.sucesso_edicao = False
+            return
+        if not nome:
+            self.mensagem_edicao = "O nome do serviço é obrigatório."
+            self.sucesso_edicao = False
+            return
+
+        try:
+            preco = parse_preco(self.preco_edicao)
+        except (InvalidOperation, ValueError):
+            self.mensagem_edicao = "Informe um valor válido, por exemplo 35,00."
+            self.sucesso_edicao = False
+            return
+        if not preco.is_finite() or preco <= 0:
+            self.mensagem_edicao = "O valor deve ser maior que zero."
+            self.sucesso_edicao = False
+            return
+
+        try:
+            duracao_minutos = int(self.duracao_minutos_edicao.strip())
+        except ValueError:
+            self.mensagem_edicao = (
+                "Informe a duração em minutos como número inteiro."
+            )
+            self.sucesso_edicao = False
+            return
+        if duracao_minutos <= 0:
+            self.mensagem_edicao = "A duração deve ser maior que zero."
+            self.sucesso_edicao = False
+            return
+
+        self.processando_edicao = True
+        self.mensagem_edicao = "Salvando alterações..."
+        self.sucesso_edicao = False
+        dados = {
+            "nome": nome,
+            "descricao": descricao,
+            "preco": float(preco),
+            "duracao_minutos": duracao_minutos,
+        }
+
+        try:
+            response = httpx.patch(
+                f"{XANO_API_URL}/servico/{servico_id}",
+                json=dados,
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            servico_atualizado = response.json()
+        except httpx.HTTPStatusError as error:
+            try:
+                err_data = error.response.json()
+            except ValueError:
+                err_data = None
+            err_msg = (
+                err_data.get("message", error.response.text)
+                if isinstance(err_data, dict)
+                else error.response.text
+            )
+            self.mensagem_edicao = f"Erro ao alterar serviço: {err_msg}"
+        except httpx.RequestError as error:
+            self.mensagem_edicao = f"Erro de conexão com o Xano: {error}"
+        except ValueError:
+            self.mensagem_edicao = "O Xano retornou uma resposta inválida."
+        else:
+            if isinstance(servico_atualizado, dict):
+                try:
+                    preco_persistido = Decimal(
+                        str(servico_atualizado.get("preco"))
+                    )
+                except (InvalidOperation, TypeError, ValueError):
+                    preco_persistido = Decimal("NaN")
+                duracao_persistida = servico_atualizado.get(
+                    "duracao_minutos"
+                )
+                dados_confirmados = (
+                    normalizar_id(servico_atualizado.get("id")) == servico_id
+                    and servico_atualizado.get("nome") == nome
+                    and servico_atualizado.get("descricao") == descricao
+                    and preco_persistido.is_finite()
+                    and preco_persistido == preco
+                    and isinstance(duracao_persistida, int)
+                    and not isinstance(duracao_persistida, bool)
+                    and duracao_persistida == duracao_minutos
+                )
+            else:
+                dados_confirmados = False
+
+            if not dados_confirmados:
+                self.mensagem_edicao = (
+                    "O Xano não confirmou a alteração dos dados do serviço."
+                )
+            else:
+                self.mensagem_edicao = "Serviço alterado com sucesso."
+                self.sucesso_edicao = True
+                self.servicos = [
+                    {
+                        "id": servico_id,
+                        "nome": nome,
+                        "descricao": descricao or "",
+                        "preco": format(preco, "f"),
+                        "preco_exibicao": (
+                            f"R$ {preco:.2f}".replace(".", ",")
+                        ),
+                        "duracao_minutos": str(duracao_minutos),
+                        "dados_incompletos": "false",
+                    }
+                    if servico["id"] == servico_id
+                    else servico
+                    for servico in self.servicos
+                ]
+                registros_incompletos = sum(
+                    servico["dados_incompletos"] == "true"
+                    for servico in self.servicos
+                )
+                self.erro_lista_servicos = (
+                    f"{registros_incompletos} serviço(s) com dados obrigatórios "
+                    "incompletos. Use Editar para preencher os campos ausentes."
+                    if registros_incompletos
+                    else ""
+                )
+        finally:
+            self.processando_edicao = False
 
     @rx.event
     def set_nome(self, nome: str):
@@ -712,6 +1844,22 @@ class ServicoState(rx.State):
                     f"Serviço cadastrado com sucesso! ID: {servico['id']}"
                 )
                 self.sucesso = True
+                servico_id = normalizar_id(servico.get("id"))
+                if servico_id is not None:
+                    self.servicos.append(
+                        {
+                            "id": servico_id,
+                            "nome": nome,
+                            "descricao": descricao,
+                            "preco": format(preco, "f"),
+                            "preco_exibicao": (
+                                f"R$ {preco:.2f}".replace(".", ",")
+                            ),
+                            "duracao_minutos": str(duracao_minutos),
+                            "dados_incompletos": "false",
+                        }
+                    )
+                    self.tem_servicos = True
                 self.nome = ""
                 self.descricao = ""
                 self.preco = ""
@@ -1710,6 +2858,73 @@ def cadastro_servico() -> rx.Component:
             rx.link("Agendar atendimento", href="/agendamentos"),
             rx.link("Consultar agendamentos", href="/agendamentos/lista"),
             rx.link("Página inicial", href="/"),
+            rx.cond(
+                ServicoState.editando,
+                rx.vstack(
+                    rx.heading("Editar Serviço", size="5"),
+                    rx.text("Nome:"),
+                    rx.input(
+                        value=ServicoState.nome_edicao,
+                        on_change=ServicoState.set_nome_edicao,
+                        width="100%",
+                    ),
+                    rx.text("Descrição (opcional):"),
+                    rx.text_area(
+                        value=ServicoState.descricao_edicao,
+                        on_change=ServicoState.set_descricao_edicao,
+                        width="100%",
+                    ),
+                    rx.text("Valor (R$):"),
+                    rx.input(
+                        type="text",
+                        input_mode="decimal",
+                        value=ServicoState.preco_edicao,
+                        on_change=ServicoState.set_preco_edicao,
+                        width="100%",
+                    ),
+                    rx.text("Duração média (minutos):"),
+                    rx.input(
+                        type="number",
+                        min="1",
+                        step="1",
+                        value=ServicoState.duracao_minutos_edicao,
+                        on_change=ServicoState.set_duracao_minutos_edicao,
+                        width="100%",
+                    ),
+                    rx.hstack(
+                        rx.button(
+                            "Salvar alterações",
+                            on_click=ServicoState.salvar_edicao,
+                            loading=ServicoState.processando_edicao,
+                        ),
+                        rx.button(
+                            "Cancelar",
+                            on_click=ServicoState.cancelar_edicao,
+                            disabled=ServicoState.processando_edicao,
+                            variant="outline",
+                        ),
+                    ),
+                    rx.cond(
+                        ServicoState.mensagem_edicao,
+                        rx.text(
+                            ServicoState.mensagem_edicao,
+                            color=rx.cond(
+                                ServicoState.sucesso_edicao,
+                                "green",
+                                "red",
+                            ),
+                            size="2",
+                        ),
+                    ),
+                    width="100%",
+                    max_width="600px",
+                    padding="20px",
+                    border="1px solid #ddd",
+                    border_radius="10px",
+                    spacing="3",
+                ),
+                rx.text(""),
+            ),
             rx.vstack(
                 rx.text("Nome:"),
                 rx.input(
@@ -1765,6 +2980,81 @@ def cadastro_servico() -> rx.Component:
                 border_radius="10px",
                 spacing="3",
             ),
+            rx.heading("Serviços cadastrados", size="5"),
+            rx.cond(
+                ServicoState.carregando_servicos,
+                rx.text("Carregando serviços..."),
+                rx.cond(
+                    ServicoState.tem_servicos,
+                    rx.vstack(
+                        rx.cond(
+                            ServicoState.erro_lista_servicos,
+                            rx.text(
+                                ServicoState.erro_lista_servicos,
+                                color="orange",
+                                size="2",
+                            ),
+                        ),
+                        rx.foreach(
+                            ServicoState.servicos,
+                            lambda servico: rx.hstack(
+                                rx.vstack(
+                                    rx.text(
+                                        rx.cond(
+                                            servico["nome"] != "",
+                                            servico["nome"],
+                                            "Nome não informado",
+                                        ),
+                                        weight="bold",
+                                    ),
+                                    rx.text(
+                                        rx.cond(
+                                            servico["descricao"] != "",
+                                            servico["descricao"],
+                                            "Sem descrição",
+                                        ),
+                                        size="2",
+                                    ),
+                                    rx.text(
+                                        servico["preco_exibicao"]
+                                        + " · "
+                                        + rx.cond(
+                                            servico["duracao_minutos"] != "",
+                                            servico["duracao_minutos"] + " min",
+                                            "Duração não informada",
+                                        )
+                                    ),
+                                    rx.cond(
+                                        servico["dados_incompletos"] == "true",
+                                        rx.text(
+                                            "Dados incompletos — edite para preencher",
+                                            color="orange",
+                                            size="2",
+                                        ),
+                                    ),
+                                    align="start",
+                                ),
+                                rx.button(
+                                    "Editar",
+                                    on_click=ServicoState.iniciar_edicao(
+                                        servico["id"]
+                                    ),
+                                    disabled=ServicoState.processando_edicao,
+                                ),
+                                justify="between",
+                                align="center",
+                                width="100%",
+                                padding="12px",
+                                border="1px solid #ddd",
+                                border_radius="8px",
+                            ),
+                        ),
+                        width="100%",
+                        max_width="600px",
+                    ),
+                    rx.text(ServicoState.erro_lista_servicos),
+                ),
+            ),
             spacing="5",
             justify="center",
             min_height="85vh",
@@ -1775,13 +3065,21 @@ def cadastro_servico() -> rx.Component:
 
 app = rx.App()
 app.add_page(login, route="/")
-app.add_page(index, route="/tutores")
+app.add_page(
+    index,
+    route="/tutores",
+    on_load=TutorState.carregar_tutores,
+)
 app.add_page(
     cadastro_pet,
     route="/pets",
-    on_load=PetState.carregar_tutores,
+    on_load=[PetState.carregar_tutores, PetState.carregar_pets],
 )
-app.add_page(cadastro_servico, route="/servicos")
+app.add_page(
+    cadastro_servico,
+    route="/servicos",
+    on_load=ServicoState.carregar_servicos,
+)
 app.add_page(
     fluxo_agendamento,
     route="/agendamentos",

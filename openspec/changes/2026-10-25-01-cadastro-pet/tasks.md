@@ -12,4 +12,4 @@
 - [x] **T-FT-02**: Criar o formulário na rota `/pets` com seleção obrigatória de tutor, nome, espécie e porte, além de raça e observações opcionais.
 - [x] **T-FT-03**: Integrar o formulário ao `GET /tutor` existente e ao `POST /pet`, tratando erros HTTP, de conexão, resposta inválida, sem identificador ou com dados ausentes/divergentes sem limpar os campos.
 - [x] **T-FT-04**: Adicionar navegação entre o cadastro de tutores existente e a nova tela de cadastro de pets, preservando a rota principal.
-- [ ] **T-FT-05**: Validar os estados de carregamento sem tutores, falha ao carregar tutores, sucesso com ID persistido e falhas no envio.
+- [x] **T-FT-05**: Validar os estados de carregamento sem tutores, falha ao carregar tutores, sucesso com ID persistido e falhas no envio.
