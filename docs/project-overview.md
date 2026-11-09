@@ -33,6 +33,7 @@ O sistema destina-se a estabelecimentos de pequeno porte e possui os seguintes p
 ### 5.1. Módulo de Gestão de Clientes e Pets
 - **Cadastro e Manutenção de Tutores:** Registro completo dos dados de contato do cliente (nome, CPF, telefone e e-mail).
 - **Conta do Cliente:** Permitir que novos tutores criem uma conta com senha para acessar a área do cliente; o Xano valida as credenciais e armazena a senha protegida por hash.
+- **Dashboard do Tutor:** Após autenticar, o cliente consulta seus dados cadastrais, cadastra um ou mais Pets vinculados à própria conta, cria novos Agendamentos para seus Pets e acompanha Agendamentos ativos e o histórico associado a eles.
 - **Ficha do Pet:** Vincular animais ao tutor responsável, registrando dados essenciais como nome, espécie, raça, porte e campo dedicado a observações médicas e comportamentais.
 
 ### 5.2. Módulo de Gestão de Serviços

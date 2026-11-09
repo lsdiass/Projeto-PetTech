@@ -536,8 +536,846 @@ class ClienteAuthState(rx.State):
     mensagem: str = ""
     processando: bool = False
     nome_cliente: str = ""
+    cpf_cliente: str = ""
+    telefone_cliente: str = ""
+    email_cliente: str = ""
+    pets_cliente: list[dict[str, str]] = []
+    agendamentos_ativos_cliente: list[dict[str, str]] = []
+    agendamentos_historico_cliente: list[dict[str, str]] = []
+    carregando_dashboard: bool = False
+    formulario_pet_cliente_aberto: bool = False
+    processando_pet_cliente: bool = False
+    mensagem_pet_cliente: str = ""
+    sucesso_pet_cliente: bool = False
+    pet_cliente_nome: str = ""
+    pet_cliente_especie: str = ""
+    pet_cliente_raca: str = ""
+    pet_cliente_porte: str = ""
+    pet_cliente_observacoes: str = ""
+    formulario_agendamento_cliente_aberto: bool = False
+    carregando_servicos_cliente: bool = False
+    servicos_cliente: list[dict[str, str]] = []
+    opcoes_servicos_cliente: list[str] = []
+    opcoes_pets_agendamento_cliente: list[str] = []
+    pet_agendamento_cliente: str = ""
+    servico_agendamento_cliente: str = ""
+    ano_agendamento_cliente: int = 0
+    mes_agendamento_cliente: int = 0
+    titulo_mes_agendamento_cliente: str = ""
+    dias_calendario_agendamento_cliente: list[dict[str, str]] = []
+    dias_disponibilidade_agendamento_cliente: list[dict[str, str]] = []
+    horarios_mes_agendamento_cliente: list[dict[str, str]] = []
+    horarios_agendamento_cliente: list[dict[str, str]] = []
+    data_agendamento_cliente: str = ""
+    horario_agendamento_cliente: str = ""
+    carregando_disponibilidade_cliente: bool = False
+    processando_agendamento_cliente: bool = False
+    mensagem_agendamento_cliente: str = ""
+    erro_agendamento_cliente: str = ""
+    sucesso_agendamento_cliente: bool = False
     _auth_token: str = ""
     _tutor_id: str = ""
+
+    def _limpar_dados_dashboard(self):
+        self.nome_cliente = ""
+        self.cpf_cliente = ""
+        self.telefone_cliente = ""
+        self.email_cliente = ""
+        self.pets_cliente = []
+        self.opcoes_pets_agendamento_cliente = []
+        self.agendamentos_ativos_cliente = []
+        self.agendamentos_historico_cliente = []
+        self.formulario_pet_cliente_aberto = False
+        self.formulario_agendamento_cliente_aberto = False
+        self.servicos_cliente = []
+        self.opcoes_servicos_cliente = []
+        self.pet_agendamento_cliente = ""
+        self.servico_agendamento_cliente = ""
+        self.dias_calendario_agendamento_cliente = []
+        self.dias_disponibilidade_agendamento_cliente = []
+        self.horarios_mes_agendamento_cliente = []
+        self.horarios_agendamento_cliente = []
+        self.data_agendamento_cliente = ""
+        self.horario_agendamento_cliente = ""
+        self.pet_cliente_nome = ""
+        self.pet_cliente_especie = ""
+        self.pet_cliente_raca = ""
+        self.pet_cliente_porte = ""
+        self.pet_cliente_observacoes = ""
+        self.mensagem_pet_cliente = ""
+        self.sucesso_pet_cliente = False
+        self.processando_pet_cliente = False
+        self.erro_agendamento_cliente = ""
+        self.mensagem_agendamento_cliente = ""
+        self.sucesso_agendamento_cliente = False
+        self.processando_agendamento_cliente = False
+        self.carregando_servicos_cliente = False
+        self.carregando_disponibilidade_cliente = False
+
+    def _processar_resposta_dashboard(self, dados: object) -> bool:
+        if not isinstance(dados, dict):
+            return False
+
+        tutor = dados.get("tutor")
+        pets = dados.get("pets")
+        agendamentos = dados.get("agendamentos")
+        if (
+            not isinstance(tutor, dict)
+            or normalizar_id(tutor.get("id")) != self._tutor_id
+            or not isinstance(tutor.get("nome"), str)
+            or not tutor["nome"].strip()
+            or not isinstance(tutor.get("cpf"), str)
+            or not tutor["cpf"].strip()
+            or not isinstance(tutor.get("telefone"), str)
+            or not tutor["telefone"].strip()
+            or not isinstance(tutor.get("email"), str)
+            or not tutor["email"].strip()
+            or not isinstance(pets, list)
+            or not isinstance(agendamentos, list)
+        ):
+            return False
+
+        pets_validos: list[dict[str, str]] = []
+        for pet in pets:
+            if not isinstance(pet, dict) or normalizar_id(pet.get("id")) is None:
+                return False
+
+            nome = pet.get("nome")
+            especie = pet.get("especie")
+            porte = pet.get("porte")
+            raca = pet.get("raca")
+            if (
+                not isinstance(nome, str)
+                or not nome.strip()
+                or not isinstance(especie, str)
+                or not especie.strip()
+                or not isinstance(porte, str)
+                or not porte.strip()
+                or (raca is not None and not isinstance(raca, str))
+            ):
+                return False
+
+            pets_validos.append(
+                {
+                    "id": normalizar_id(pet.get("id")) or "",
+                    "nome": nome.strip(),
+                    "especie": especie.strip(),
+                    "raca": (
+                        raca.strip()
+                        if isinstance(raca, str) and raca.strip()
+                        else "Não informada"
+                    ),
+                    "porte": porte.strip(),
+                }
+            )
+
+        ativos: list[dict[str, str]] = []
+        historico: list[dict[str, str]] = []
+        for agendamento in agendamentos:
+            if (
+                not isinstance(agendamento, dict)
+                or normalizar_id(agendamento.get("id")) is None
+            ):
+                return False
+
+            pet_nome = agendamento.get("pet_nome")
+            servico_nome = agendamento.get("servico_nome")
+            status = agendamento.get("status")
+            data_hora = formatar_data_hora_agendamento(
+                agendamento.get("data_hora")
+            )
+            if (
+                not isinstance(pet_nome, str)
+                or not pet_nome.strip()
+                or not isinstance(servico_nome, str)
+                or not servico_nome.strip()
+                or not isinstance(status, str)
+                or status not in (
+                    "Agendado",
+                    "Em Andamento",
+                    "Concluído",
+                    "Cancelado",
+                )
+                or data_hora is None
+            ):
+                return False
+
+            item = {
+                "pet_nome": pet_nome.strip(),
+                "servico_nome": servico_nome.strip(),
+                "data_hora": data_hora,
+                "status": status,
+            }
+            if status in ("Agendado", "Em Andamento"):
+                ativos.append(item)
+            else:
+                historico.append(item)
+
+        self.nome_cliente = tutor["nome"].strip()
+        self.cpf_cliente = tutor["cpf"].strip()
+        self.telefone_cliente = tutor["telefone"].strip()
+        self.email_cliente = tutor["email"].strip()
+        self.email = self.email_cliente
+        self.pets_cliente = pets_validos
+        self.opcoes_pets_agendamento_cliente = [
+            f"{pet['id']} - {pet['nome']}" for pet in pets_validos
+        ]
+        self.agendamentos_ativos_cliente = ativos
+        self.agendamentos_historico_cliente = historico
+        self.formulario_pet_cliente_aberto = False
+        self.formulario_agendamento_cliente_aberto = False
+        self.mensagem_pet_cliente = ""
+        self.mensagem_agendamento_cliente = ""
+        self.erro_agendamento_cliente = ""
+        return True
+
+    @rx.event
+    def alternar_formulario_pet_cliente(self):
+        if self.processando_pet_cliente:
+            return
+        self.formulario_pet_cliente_aberto = not self.formulario_pet_cliente_aberto
+        self.mensagem_pet_cliente = ""
+        self.sucesso_pet_cliente = False
+
+    @rx.event
+    def set_pet_cliente_nome(self, valor: str):
+        self.pet_cliente_nome = valor
+
+    @rx.event
+    def set_pet_cliente_especie(self, valor: str):
+        self.pet_cliente_especie = valor
+
+    @rx.event
+    def set_pet_cliente_raca(self, valor: str):
+        self.pet_cliente_raca = valor
+
+    @rx.event
+    def set_pet_cliente_porte(self, valor: str):
+        self.pet_cliente_porte = valor
+
+    @rx.event
+    def set_pet_cliente_observacoes(self, valor: str):
+        self.pet_cliente_observacoes = valor
+
+    @rx.event
+    def cadastrar_pet_cliente(self):
+        if self.processando_pet_cliente:
+            return
+        if not self._auth_token or not self._tutor_id:
+            self.mensagem = "Sua sessão expirou. Entre novamente."
+            return rx.redirect("/cliente")
+
+        nome = self.pet_cliente_nome.strip()
+        especie = self.pet_cliente_especie.strip()
+        raca = self.pet_cliente_raca.strip()
+        porte = self.pet_cliente_porte
+        observacoes = self.pet_cliente_observacoes.strip()
+        if not nome:
+            self.mensagem_pet_cliente = "O nome do Pet é obrigatório."
+        elif not especie:
+            self.mensagem_pet_cliente = "A espécie do Pet é obrigatória."
+        elif porte not in ("Pequeno", "Médio", "Grande"):
+            self.mensagem_pet_cliente = "Selecione um porte válido."
+        else:
+            self.mensagem_pet_cliente = ""
+        if self.mensagem_pet_cliente:
+            self.sucesso_pet_cliente = False
+            return
+
+        self.processando_pet_cliente = True
+        self.mensagem_pet_cliente = "Cadastrando Pet..."
+        self.sucesso_pet_cliente = False
+        dados = {
+            "nome": nome,
+            "especie": especie,
+            "porte": porte,
+            "raca": raca or None,
+            "observacoes_saude": observacoes or None,
+        }
+        try:
+            response = httpx.post(
+                f"{XANO_API_URL}/cliente/sessao/pets",
+                headers={"Authorization": f"Bearer {self._auth_token}"},
+                json=dados,
+                timeout=15.0,
+            )
+            response.raise_for_status()
+            pet = response.json()
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code in (401, 403):
+                self._auth_token = ""
+                self._tutor_id = ""
+                self._limpar_dados_dashboard()
+                self.mensagem = "Sua sessão expirou. Entre novamente."
+                return rx.redirect("/cliente")
+            self.mensagem_pet_cliente = self._mensagem_erro_http(
+                error,
+                "Não foi possível cadastrar o Pet",
+            )
+        except httpx.RequestError as error:
+            self.mensagem_pet_cliente = (
+                f"Erro de conexão ao cadastrar o Pet: {error}"
+            )
+        except ValueError:
+            self.mensagem_pet_cliente = (
+                "O Xano retornou uma confirmação de Pet inválida."
+            )
+        else:
+            pet_id = normalizar_id(pet.get("id")) if isinstance(pet, dict) else None
+            confirmado = (
+                isinstance(pet, dict)
+                and pet_id is not None
+                and normalizar_id(pet.get("tutor_id")) == self._tutor_id
+                and pet.get("nome") == nome
+                and pet.get("especie") == especie
+                and pet.get("porte") == porte
+                and (pet.get("raca") or "") == raca
+                and (pet.get("observacoes_saude") or "") == observacoes
+            )
+            if not confirmado or pet_id is None:
+                self.mensagem_pet_cliente = (
+                    "O Xano não confirmou os dados persistidos do Pet."
+                )
+            else:
+                self.pets_cliente = [
+                    *self.pets_cliente,
+                    {
+                        "id": pet_id,
+                        "nome": nome,
+                        "especie": especie,
+                        "raca": raca or "Não informada",
+                        "porte": porte,
+                    },
+                ]
+                self.opcoes_pets_agendamento_cliente = [
+                    *self.opcoes_pets_agendamento_cliente,
+                    f"{pet_id} - {nome}",
+                ]
+                self.mensagem_pet_cliente = "Pet cadastrado com sucesso!"
+                self.sucesso_pet_cliente = True
+                self.formulario_pet_cliente_aberto = False
+                self.pet_cliente_nome = ""
+                self.pet_cliente_especie = ""
+                self.pet_cliente_raca = ""
+                self.pet_cliente_porte = ""
+                self.pet_cliente_observacoes = ""
+                if self.formulario_agendamento_cliente_aberto:
+                    self._atualizar_opcoes_pets_agendamento_cliente()
+        finally:
+            self.processando_pet_cliente = False
+
+    def _atualizar_opcoes_pets_agendamento_cliente(self):
+        self.opcoes_pets_agendamento_cliente = [
+            f"{pet['id']} - {pet['nome']}" for pet in self.pets_cliente
+        ]
+        if self.pet_agendamento_cliente and not any(
+            opcao == self.pet_agendamento_cliente
+            for opcao in self.opcoes_pets_agendamento_cliente
+        ):
+            self.pet_agendamento_cliente = ""
+
+    def _limpar_agendamento_cliente(self):
+        self.pet_agendamento_cliente = ""
+        self.servico_agendamento_cliente = ""
+        self.servicos_cliente = []
+        self.opcoes_servicos_cliente = []
+        self.opcoes_pets_agendamento_cliente = []
+        self.dias_calendario_agendamento_cliente = []
+        self.dias_disponibilidade_agendamento_cliente = []
+        self.horarios_mes_agendamento_cliente = []
+        self.horarios_agendamento_cliente = []
+        self.data_agendamento_cliente = ""
+        self.horario_agendamento_cliente = ""
+        self.erro_agendamento_cliente = ""
+        self.mensagem_agendamento_cliente = ""
+        self.sucesso_agendamento_cliente = False
+
+    @rx.event
+    def alternar_agendamento_cliente(self):
+        if self.processando_agendamento_cliente:
+            return
+        if self.formulario_agendamento_cliente_aberto:
+            self.formulario_agendamento_cliente_aberto = False
+            self._limpar_agendamento_cliente()
+            return
+        if not self._auth_token or not self._tutor_id:
+            self.mensagem = "Sua sessão expirou. Entre novamente."
+            return rx.redirect("/cliente")
+        if not self.pets_cliente:
+            self.erro_agendamento_cliente = (
+                "Cadastre um Pet antes de solicitar um Agendamento."
+            )
+            return
+
+        self.formulario_agendamento_cliente_aberto = True
+        self._limpar_agendamento_cliente()
+        self.pet_agendamento_cliente = (
+            f"{self.pets_cliente[0]['id']} - {self.pets_cliente[0]['nome']}"
+        )
+        self._atualizar_opcoes_pets_agendamento_cliente()
+        agora = datetime.now(FUSO_AGENDAMENTO)
+        self.ano_agendamento_cliente = agora.year
+        self.mes_agendamento_cliente = agora.month
+        self._carregar_servicos_cliente()
+
+    def _carregar_servicos_cliente(self):
+        self.carregando_servicos_cliente = True
+        self.erro_agendamento_cliente = ""
+        try:
+            response = httpx.get(f"{XANO_API_URL}/servico", timeout=15.0)
+            response.raise_for_status()
+            servicos = response.json()
+        except httpx.HTTPStatusError as error:
+            self.erro_agendamento_cliente = (
+                "Não foi possível carregar os Serviços: "
+                f"HTTP {error.response.status_code}."
+            )
+        except httpx.RequestError as error:
+            self.erro_agendamento_cliente = (
+                f"Erro de conexão ao carregar Serviços: {error}"
+            )
+        except ValueError:
+            self.erro_agendamento_cliente = (
+                "O Xano retornou uma lista de Serviços inválida."
+            )
+        else:
+            if not isinstance(servicos, list):
+                self.erro_agendamento_cliente = (
+                    "O Xano retornou uma lista de Serviços inválida."
+                )
+            else:
+                servicos_validos: list[dict[str, str]] = []
+                opcoes: list[str] = []
+                for servico in servicos:
+                    if not isinstance(servico, dict):
+                        continue
+                    servico_id = normalizar_id(servico.get("id"))
+                    nome = servico.get("nome")
+                    duracao = servico.get("duracao_minutos")
+                    if (
+                        servico_id is None
+                        or not isinstance(nome, str)
+                        or not nome.strip()
+                        or isinstance(duracao, bool)
+                        or not isinstance(duracao, int)
+                        or duracao <= 0
+                    ):
+                        continue
+                    nome = nome.strip()
+                    servicos_validos.append(
+                        {
+                            "id": servico_id,
+                            "nome": nome,
+                            "duracao_minutos": str(duracao),
+                        }
+                    )
+                    opcoes.append(f"{servico_id} - {nome} ({duracao} min)")
+                self.servicos_cliente = servicos_validos
+                self.opcoes_servicos_cliente = opcoes
+                if not servicos_validos:
+                    self.erro_agendamento_cliente = (
+                        "Não há Serviços válidos disponíveis para agendamento."
+                    )
+        finally:
+            self.carregando_servicos_cliente = False
+
+    @rx.event
+    def selecionar_pet_agendamento_cliente(self, opcao: str):
+        pet_id = opcao.split(" - ", 1)[0]
+        pet = next(
+            (item for item in self.pets_cliente if item["id"] == pet_id),
+            None,
+        )
+        if pet is None:
+            self.erro_agendamento_cliente = "Selecione um Pet da sua conta."
+            return
+        if opcao not in self.opcoes_pets_agendamento_cliente:
+            self.erro_agendamento_cliente = "Selecione um Pet da sua conta."
+            return
+        self.pet_agendamento_cliente = opcao
+        self.erro_agendamento_cliente = ""
+
+    @rx.event
+    def selecionar_servico_agendamento_cliente(self, opcao: str):
+        servico_id = opcao.split(" - ", 1)[0]
+        if not any(item["id"] == servico_id for item in self.servicos_cliente):
+            self.erro_agendamento_cliente = "Selecione um Serviço válido."
+            return
+        self.servico_agendamento_cliente = opcao
+        self.data_agendamento_cliente = ""
+        self.horario_agendamento_cliente = ""
+        self.horarios_agendamento_cliente = []
+        self.mensagem_agendamento_cliente = ""
+        self.sucesso_agendamento_cliente = False
+        self._carregar_disponibilidade_cliente()
+
+    def _atualizar_calendario_agendamento_cliente(self):
+        if self.ano_agendamento_cliente < 1 or self.mes_agendamento_cliente < 1:
+            self.dias_calendario_agendamento_cliente = []
+            return
+
+        hoje = datetime.now(FUSO_AGENDAMENTO).date()
+        primeiro_dia_semana, dias_no_mes = calendar.monthrange(
+            self.ano_agendamento_cliente,
+            self.mes_agendamento_cliente,
+        )
+        dias = [
+            {
+                "data": "",
+                "numero": "",
+                "habilitado": "false",
+                "espaco": "true",
+            }
+            for _ in range(primeiro_dia_semana)
+        ]
+        disponibilidade = {
+            dia["data"]: dia
+            for dia in self.dias_disponibilidade_agendamento_cliente
+        }
+        for numero in range(1, dias_no_mes + 1):
+            data = (
+                f"{self.ano_agendamento_cliente:04d}-"
+                f"{self.mes_agendamento_cliente:02d}-{numero:02d}"
+            )
+            dia = disponibilidade.get(data)
+            habilitado = (
+                dia is not None
+                and dia["tem_horario_disponivel"] == "true"
+                and datetime.strptime(data, "%Y-%m-%d").date() >= hoje
+            )
+            dias.append(
+                {
+                    "data": data,
+                    "numero": str(numero),
+                    "habilitado": str(habilitado).lower(),
+                    "espaco": "false",
+                }
+            )
+
+        self.dias_calendario_agendamento_cliente = dias
+        self.titulo_mes_agendamento_cliente = (
+            f"{NOMES_MESES[self.mes_agendamento_cliente]} "
+            f"{self.ano_agendamento_cliente}"
+        )
+
+    def _carregar_disponibilidade_cliente(self):
+        if not self.servico_agendamento_cliente:
+            self.dias_disponibilidade_agendamento_cliente = []
+            self.horarios_mes_agendamento_cliente = []
+            self._atualizar_calendario_agendamento_cliente()
+            return
+
+        servico_id = self.servico_agendamento_cliente.split(" - ", 1)[0]
+        self.carregando_disponibilidade_cliente = True
+        self.erro_agendamento_cliente = ""
+        self.dias_disponibilidade_agendamento_cliente = []
+        self.horarios_mes_agendamento_cliente = []
+        try:
+            response = httpx.get(
+                f"{XANO_API_URL}/agendamento_disponibilidade",
+                params={
+                    "servico_id": int(servico_id),
+                    "ano": self.ano_agendamento_cliente,
+                    "mes": self.mes_agendamento_cliente,
+                },
+                timeout=30.0,
+            )
+            response.raise_for_status()
+            dados = response.json()
+        except httpx.HTTPStatusError as error:
+            self.erro_agendamento_cliente = (
+                "Erro ao consultar disponibilidade: "
+                f"HTTP {error.response.status_code}."
+            )
+        except httpx.RequestError as error:
+            self.erro_agendamento_cliente = (
+                f"Erro de conexão ao consultar disponibilidade: {error}"
+            )
+        except ValueError:
+            self.erro_agendamento_cliente = (
+                "O Xano retornou uma disponibilidade inválida."
+            )
+        else:
+            if not isinstance(dados, list):
+                self.erro_agendamento_cliente = (
+                    "O Xano retornou uma disponibilidade inválida."
+                )
+            else:
+                dias: list[dict[str, str]] = []
+                horarios_mes: list[dict[str, str]] = []
+                for dia in dados:
+                    if (
+                        not isinstance(dia, dict)
+                        or not isinstance(dia.get("data"), str)
+                        or not isinstance(dia.get("horarios"), list)
+                        or not isinstance(
+                            dia.get("tem_horario_disponivel"), bool
+                        )
+                    ):
+                        self.erro_agendamento_cliente = (
+                            "O Xano retornou um dia de disponibilidade inválido."
+                        )
+                        break
+                    horarios: list[dict[str, str]] = []
+                    for horario in dia["horarios"]:
+                        if (
+                            not isinstance(horario, dict)
+                            or not isinstance(horario.get("hora"), str)
+                            or not isinstance(horario.get("disponivel"), bool)
+                        ):
+                            self.erro_agendamento_cliente = (
+                                "O Xano retornou um horário de disponibilidade inválido."
+                            )
+                            break
+                        data_hora = timestamp_em_milissegundos(
+                            horario.get("data_hora")
+                        )
+                        if data_hora is None:
+                            self.erro_agendamento_cliente = (
+                                "O Xano retornou um horário sem data válida."
+                            )
+                            break
+                        horarios.append(
+                            {
+                                "data": dia["data"],
+                                "data_hora": str(data_hora),
+                                "hora": horario["hora"],
+                                "disponivel": str(
+                                    horario["disponivel"]
+                                ).lower(),
+                            }
+                        )
+                    if self.erro_agendamento_cliente:
+                        break
+                    dias.append(
+                        {
+                            "data": dia["data"],
+                            "tem_horario_disponivel": str(
+                                dia["tem_horario_disponivel"]
+                            ).lower(),
+                        }
+                    )
+                    horarios_mes.extend(horarios)
+                if not self.erro_agendamento_cliente:
+                    self.dias_disponibilidade_agendamento_cliente = dias
+                    self.horarios_mes_agendamento_cliente = horarios_mes
+
+        self.carregando_disponibilidade_cliente = False
+        self._atualizar_calendario_agendamento_cliente()
+
+    @rx.event
+    def mudar_mes_agendamento_cliente(self, incremento: int):
+        ano = self.ano_agendamento_cliente
+        mes = self.mes_agendamento_cliente + incremento
+        if mes < 1:
+            ano -= 1
+            mes = 12
+        elif mes > 12:
+            ano += 1
+            mes = 1
+        agora = datetime.now(FUSO_AGENDAMENTO)
+        if (ano, mes) < (agora.year, agora.month):
+            return
+        self.ano_agendamento_cliente = ano
+        self.mes_agendamento_cliente = mes
+        self.data_agendamento_cliente = ""
+        self.horario_agendamento_cliente = ""
+        self.horarios_agendamento_cliente = []
+        self.mensagem_agendamento_cliente = ""
+        self._carregar_disponibilidade_cliente()
+
+    @rx.event
+    def selecionar_dia_agendamento_cliente(self, data: str):
+        dia = next(
+            (
+                item
+                for item in self.dias_disponibilidade_agendamento_cliente
+                if item["data"] == data
+                and item["tem_horario_disponivel"] == "true"
+            ),
+            None,
+        )
+        if dia is None:
+            self.erro_agendamento_cliente = (
+                "Este dia não possui horários disponíveis."
+            )
+            return
+        self.data_agendamento_cliente = data
+        self.horarios_agendamento_cliente = [
+            horario
+            for horario in self.horarios_mes_agendamento_cliente
+            if horario["data"] == data
+        ]
+        self.horario_agendamento_cliente = ""
+        self.erro_agendamento_cliente = ""
+        self.mensagem_agendamento_cliente = ""
+
+    @rx.event
+    def selecionar_horario_agendamento_cliente(self, data_hora: str):
+        horario = next(
+            (
+                item
+                for item in self.horarios_agendamento_cliente
+                if item["data_hora"] == data_hora
+                and item["disponivel"] == "true"
+            ),
+            None,
+        )
+        if horario is None:
+            self.erro_agendamento_cliente = (
+                "Selecione um horário que ainda esteja disponível."
+            )
+            return
+        self.horario_agendamento_cliente = horario["data_hora"]
+        self.erro_agendamento_cliente = ""
+        self.mensagem_agendamento_cliente = ""
+
+    @rx.event
+    def confirmar_agendamento_cliente(self):
+        if self.processando_agendamento_cliente:
+            return
+        if not self._auth_token or not self._tutor_id:
+            self.mensagem = "Sua sessão expirou. Entre novamente."
+            return rx.redirect("/cliente")
+        pet_id = self.pet_agendamento_cliente.split(" - ", 1)[0]
+        servico_id = self.servico_agendamento_cliente.split(" - ", 1)[0]
+        pet = next(
+            (
+                item
+                for item in self.pets_cliente
+                if item["id"] == pet_id
+            ),
+            None,
+        )
+        servico = next(
+            (
+                item
+                for item in self.servicos_cliente
+                if item["id"] == servico_id
+            ),
+            None,
+        )
+        horario = next(
+            (
+                item
+                for item in self.horarios_agendamento_cliente
+                if item["data_hora"] == self.horario_agendamento_cliente
+                and item["disponivel"] == "true"
+            ),
+            None,
+        )
+        if pet is None:
+            self.erro_agendamento_cliente = "Selecione um Pet da sua conta."
+            return
+        if servico is None:
+            self.erro_agendamento_cliente = "Selecione um Serviço válido."
+            return
+        if not self.data_agendamento_cliente or horario is None:
+            self.erro_agendamento_cliente = (
+                "Selecione um dia e horário disponíveis."
+            )
+            return
+
+        pet_id_int = int(pet_id)
+        servico_id_int = int(servico_id)
+        data_hora_int = int(horario["data_hora"])
+        self.processando_agendamento_cliente = True
+        self.erro_agendamento_cliente = ""
+        self.mensagem_agendamento_cliente = "Confirmando Agendamento..."
+        self.sucesso_agendamento_cliente = False
+        try:
+            response = httpx.post(
+                f"{XANO_API_URL}/cliente/sessao/agendamentos",
+                headers={"Authorization": f"Bearer {self._auth_token}"},
+                json={
+                    "pet_id": pet_id_int,
+                    "servico_id": servico_id_int,
+                    "data_hora": data_hora_int,
+                },
+                timeout=20.0,
+            )
+            response.raise_for_status()
+            agendamento = response.json()
+        except httpx.HTTPStatusError as error:
+            self.mensagem_agendamento_cliente = ""
+            if error.response.status_code in (401, 403):
+                self._auth_token = ""
+                self._tutor_id = ""
+                self._limpar_dados_dashboard()
+                self.mensagem = "Sua sessão expirou. Entre novamente."
+                return rx.redirect("/cliente")
+            erro_confirmacao = self._mensagem_erro_http(
+                error,
+                "Não foi possível confirmar o Agendamento",
+            )
+            if error.response.status_code == 429:
+                tempo_espera = error.response.headers.get("Retry-After")
+                if tempo_espera and tempo_espera.isdigit():
+                    erro_confirmacao = (
+                        "O Xano limitou temporariamente as chamadas. "
+                        f"Aguarde {tempo_espera} segundos antes de tentar novamente."
+                    )
+                else:
+                    erro_confirmacao = (
+                        "O Xano limitou temporariamente as chamadas. "
+                        "Aguarde um pouco antes de tentar novamente."
+                    )
+            if error.response.status_code < 500 and error.response.status_code != 429:
+                self._carregar_disponibilidade_cliente()
+                if self.erro_agendamento_cliente:
+                    erro_confirmacao = (
+                        f"{erro_confirmacao} {self.erro_agendamento_cliente}"
+                    )
+            self.erro_agendamento_cliente = erro_confirmacao
+        except httpx.RequestError as error:
+            self.mensagem_agendamento_cliente = ""
+            self.erro_agendamento_cliente = (
+                f"Erro de conexão ao confirmar Agendamento: {error}"
+            )
+        except ValueError:
+            self.mensagem_agendamento_cliente = ""
+            self.erro_agendamento_cliente = (
+                "O Xano retornou uma confirmação de Agendamento inválida."
+            )
+        else:
+            data_hora_confirmada = (
+                timestamp_em_milissegundos(agendamento.get("data_hora"))
+                if isinstance(agendamento, dict)
+                else None
+            )
+            if (
+                not isinstance(agendamento, dict)
+                or normalizar_id(agendamento.get("id")) is None
+                or normalizar_id(agendamento.get("pet_id")) != pet_id
+                or normalizar_id(agendamento.get("servico_id")) != servico_id
+                or data_hora_confirmada != data_hora_int
+                or agendamento.get("status") != "Agendado"
+            ):
+                self.mensagem_agendamento_cliente = ""
+                self.erro_agendamento_cliente = (
+                    "O Xano não confirmou os dados persistidos do Agendamento."
+                )
+            else:
+                self.agendamentos_ativos_cliente = [
+                    {
+                        "pet_nome": pet["nome"],
+                        "servico_nome": servico["nome"],
+                        "data_hora": formatar_data_hora_agendamento(
+                            data_hora_int
+                        )
+                        or "",
+                        "status": "Agendado",
+                    },
+                    *self.agendamentos_ativos_cliente,
+                ]
+                self.mensagem_agendamento_cliente = "Agendado com sucesso!"
+                self.sucesso_agendamento_cliente = True
+                self.horario_agendamento_cliente = ""
+                self.data_agendamento_cliente = ""
+                self.horarios_agendamento_cliente = []
+                self._carregar_disponibilidade_cliente()
+        finally:
+            self.processando_agendamento_cliente = False
 
     def set_nome(self, nome: str):
         self.nome = nome
@@ -617,7 +1455,7 @@ class ClienteAuthState(rx.State):
         self.mensagem = "Validando acesso..."
         self._auth_token = ""
         self._tutor_id = ""
-        self.nome_cliente = ""
+        self._limpar_dados_dashboard()
 
         try:
             response = httpx.post(
@@ -669,7 +1507,7 @@ class ClienteAuthState(rx.State):
         self.mensagem = "Criando sua conta..."
         self._auth_token = ""
         self._tutor_id = ""
-        self.nome_cliente = ""
+        self._limpar_dados_dashboard()
 
         try:
             response = httpx.post(
@@ -717,68 +1555,52 @@ class ClienteAuthState(rx.State):
 
     def carregar_conta(self):
         if not self._auth_token or not self._tutor_id:
+            self._limpar_dados_dashboard()
+            self.mensagem = "Entre na sua conta para acessar o dashboard."
             return rx.redirect("/cliente")
 
-        self.mensagem = "Validando sua sessão..."
+        self.carregando_dashboard = True
+        self.mensagem = ""
         try:
             response = httpx.get(
-                f"{XANO_API_URL}/cliente/sessao/perfil",
+                f"{XANO_API_URL}/cliente/sessao/dashboard",
                 headers={"Authorization": f"Bearer {self._auth_token}"},
                 timeout=10.0,
             )
             response.raise_for_status()
-            tutor = response.json()
+            dados = response.json()
         except httpx.HTTPStatusError as error:
             if error.response.status_code in (401, 403):
                 self.mensagem = "Sua sessão expirou. Entre novamente."
+                self._auth_token = ""
+                self._tutor_id = ""
+                self._limpar_dados_dashboard()
+                return rx.redirect("/cliente")
             else:
                 self.mensagem = self._mensagem_erro_http(
                     error,
-                    "Não foi possível carregar sua conta",
+                    "Não foi possível carregar seu dashboard",
                 )
-            self._auth_token = ""
-            self._tutor_id = ""
-            self.nome_cliente = ""
-            return rx.redirect("/cliente")
+                self._limpar_dados_dashboard()
         except httpx.RequestError as error:
-            self.mensagem = f"Erro de conexão ao validar sua sessão: {error}"
-            self._auth_token = ""
-            self._tutor_id = ""
-            self.nome_cliente = ""
-            return rx.redirect("/cliente")
+            self.mensagem = f"Erro de conexão ao carregar seu dashboard: {error}"
+            self._limpar_dados_dashboard()
         except ValueError:
-            self.mensagem = "O Xano retornou os dados da conta em formato inválido."
-            self._auth_token = ""
-            self._tutor_id = ""
-            self.nome_cliente = ""
-            return rx.redirect("/cliente")
+            self.mensagem = "O Xano retornou os dados do dashboard em formato inválido."
+            self._limpar_dados_dashboard()
         else:
-            tutor_id = (
-                normalizar_id(tutor.get("id"))
-                if isinstance(tutor, dict)
-                else None
-            )
-            if (
-                tutor_id != self._tutor_id
-                or not isinstance(tutor, dict)
-                or not isinstance(tutor.get("nome"), str)
-                or not tutor["nome"].strip()
-            ):
-                self.mensagem = "O Xano não confirmou os dados da sua conta."
-                self._auth_token = ""
-                self._tutor_id = ""
-                self.nome_cliente = ""
-                return rx.redirect("/cliente")
-            self.nome_cliente = tutor["nome"]
-            email = tutor.get("email")
-            if isinstance(email, str):
-                self.email = email
-            self.mensagem = ""
+            if not self._processar_resposta_dashboard(dados):
+                self.mensagem = (
+                    "O Xano retornou dados incompletos ou inválidos para o dashboard."
+                )
+                self._limpar_dados_dashboard()
+        finally:
+            self.carregando_dashboard = False
 
     def sair(self):
         self._auth_token = ""
         self._tutor_id = ""
-        self.nome_cliente = ""
+        self._limpar_dados_dashboard()
         self.senha = ""
         self.confirmar_senha = ""
         self.mensagem = ""
@@ -980,30 +1802,487 @@ def cadastro_cliente() -> rx.Component:
     )
 
 
+def calendario_agendamento_cliente() -> rx.Component:
+    return rx.vstack(
+        rx.hstack(
+            rx.button(
+                "‹",
+                on_click=ClienteAuthState.mudar_mes_agendamento_cliente(-1),
+            ),
+            rx.heading(
+                ClienteAuthState.titulo_mes_agendamento_cliente,
+                size="4",
+            ),
+            rx.button(
+                "›",
+                on_click=ClienteAuthState.mudar_mes_agendamento_cliente(1),
+            ),
+            align="center",
+            justify="between",
+            width="100%",
+        ),
+        rx.grid(
+            *[
+                rx.text(dia, weight="bold", align="center")
+                for dia in ["Seg", "Ter", "Qua", "Qui", "Sex", "Sáb", "Dom"]
+            ],
+            columns="repeat(7, 1fr)",
+            width="100%",
+        ),
+        rx.grid(
+            rx.foreach(
+                ClienteAuthState.dias_calendario_agendamento_cliente,
+                lambda dia: rx.cond(
+                    dia["espaco"] == "true",
+                    rx.box(height="40px"),
+                    rx.button(
+                        dia["numero"],
+                        on_click=ClienteAuthState.selecionar_dia_agendamento_cliente(
+                            dia["data"]
+                        ),
+                        disabled=dia["habilitado"] != "true",
+                        color_scheme=rx.cond(
+                            dia["habilitado"] == "true",
+                            "blue",
+                            "gray",
+                        ),
+                        variant=rx.cond(
+                            dia["data"] == ClienteAuthState.data_agendamento_cliente,
+                            "solid",
+                            "outline",
+                        ),
+                        width="100%",
+                    ),
+                ),
+            ),
+            columns="repeat(7, 1fr)",
+            width="100%",
+        ),
+        spacing="3",
+        width="100%",
+    )
+
+
+def formulario_pet_cliente() -> rx.Component:
+    return rx.vstack(
+        rx.text("Nome:"),
+        rx.input(
+            placeholder="Nome do Pet",
+            value=ClienteAuthState.pet_cliente_nome,
+            on_change=ClienteAuthState.set_pet_cliente_nome,
+            width="100%",
+        ),
+        rx.text("Espécie:"),
+        rx.input(
+            placeholder="Ex.: Cão ou Gato",
+            value=ClienteAuthState.pet_cliente_especie,
+            on_change=ClienteAuthState.set_pet_cliente_especie,
+            width="100%",
+        ),
+        rx.text("Raça (opcional):"),
+        rx.input(
+            placeholder="Raça do Pet",
+            value=ClienteAuthState.pet_cliente_raca,
+            on_change=ClienteAuthState.set_pet_cliente_raca,
+            width="100%",
+        ),
+        rx.text("Porte:"),
+        rx.select(
+            ["Pequeno", "Médio", "Grande"],
+            value=ClienteAuthState.pet_cliente_porte,
+            on_change=ClienteAuthState.set_pet_cliente_porte,
+            placeholder="Selecione o porte",
+            width="100%",
+        ),
+        rx.text("Observações de saúde e comportamento (opcional):"),
+        rx.text_area(
+            placeholder="Alergias, cuidados especiais ou observações",
+            value=ClienteAuthState.pet_cliente_observacoes,
+            on_change=ClienteAuthState.set_pet_cliente_observacoes,
+            width="100%",
+        ),
+        rx.button(
+            "Salvar Pet",
+            on_click=ClienteAuthState.cadastrar_pet_cliente,
+            loading=ClienteAuthState.processando_pet_cliente,
+            width="100%",
+        ),
+        rx.cond(
+            ClienteAuthState.mensagem_pet_cliente,
+            rx.text(
+                ClienteAuthState.mensagem_pet_cliente,
+                color=rx.cond(
+                    ClienteAuthState.sucesso_pet_cliente,
+                    "green",
+                    "red",
+                ),
+                size="2",
+            ),
+        ),
+        width="100%",
+        spacing="3",
+    )
+
+
+def formulario_agendamento_cliente() -> rx.Component:
+    return rx.vstack(
+        rx.heading("Novo Agendamento", size="5"),
+        rx.text("Pet:"),
+        rx.select(
+            ClienteAuthState.opcoes_pets_agendamento_cliente,
+            value=ClienteAuthState.pet_agendamento_cliente,
+            on_change=ClienteAuthState.selecionar_pet_agendamento_cliente,
+            placeholder="Selecione um Pet",
+            width="100%",
+        ),
+        rx.text("Serviço:"),
+        rx.cond(
+            ClienteAuthState.carregando_servicos_cliente,
+            rx.text("Carregando Serviços..."),
+            rx.select(
+                ClienteAuthState.opcoes_servicos_cliente,
+                value=ClienteAuthState.servico_agendamento_cliente,
+                on_change=ClienteAuthState.selecionar_servico_agendamento_cliente,
+                placeholder="Selecione um Serviço",
+                width="100%",
+            ),
+        ),
+        rx.cond(
+            ClienteAuthState.servico_agendamento_cliente != "",
+            rx.cond(
+                ClienteAuthState.carregando_disponibilidade_cliente,
+                rx.text("Consultando disponibilidade..."),
+                rx.vstack(
+                    rx.heading("Selecione o dia", size="5"),
+                    calendario_agendamento_cliente(),
+                    rx.cond(
+                        ClienteAuthState.data_agendamento_cliente != "",
+                        rx.vstack(
+                            rx.heading("Horários disponíveis", size="5"),
+                            rx.grid(
+                                rx.foreach(
+                                    ClienteAuthState.horarios_agendamento_cliente,
+                                    lambda horario: rx.button(
+                                        horario["hora"],
+                                        on_click=ClienteAuthState.selecionar_horario_agendamento_cliente(
+                                            horario["data_hora"]
+                                        ),
+                                        disabled=horario["disponivel"] != "true",
+                                        color_scheme=rx.cond(
+                                            horario["disponivel"] == "true",
+                                            "blue",
+                                            "gray",
+                                        ),
+                                        variant=rx.cond(
+                                            horario["data_hora"]
+                                            == ClienteAuthState.horario_agendamento_cliente,
+                                            "solid",
+                                            "outline",
+                                        ),
+                                    ),
+                                ),
+                                columns="repeat(4, 1fr)",
+                                width="100%",
+                            ),
+                            rx.button(
+                                "Confirmar Agendamento",
+                                on_click=ClienteAuthState.confirmar_agendamento_cliente,
+                                loading=ClienteAuthState.processando_agendamento_cliente,
+                                disabled=(
+                                    (ClienteAuthState.horario_agendamento_cliente == "")
+                                    | ClienteAuthState.processando_agendamento_cliente
+                                ),
+                                width="100%",
+                            ),
+                            width="100%",
+                            spacing="3",
+                        ),
+                    ),
+                    width="100%",
+                    spacing="4",
+                ),
+            ),
+        ),
+        rx.cond(
+            ClienteAuthState.erro_agendamento_cliente,
+            rx.text(
+                ClienteAuthState.erro_agendamento_cliente,
+                color="red",
+                size="2",
+            ),
+        ),
+        rx.cond(
+            ClienteAuthState.mensagem_agendamento_cliente,
+            rx.text(
+                ClienteAuthState.mensagem_agendamento_cliente,
+                color=rx.cond(
+                    ClienteAuthState.sucesso_agendamento_cliente,
+                    "green",
+                    "blue",
+                ),
+                size="2",
+            ),
+        ),
+        width="100%",
+        spacing="3",
+    )
+
+
 def inicio_cliente() -> rx.Component:
+    dados_cadastrais = rx.vstack(
+        rx.heading("Seus dados cadastrais", size="5"),
+        rx.grid(
+            rx.vstack(
+                rx.text("Nome", color="#718078", size="2"),
+                rx.text(ClienteAuthState.nome_cliente, weight="bold"),
+                align="start",
+            ),
+            rx.vstack(
+                rx.text("CPF", color="#718078", size="2"),
+                rx.text(ClienteAuthState.cpf_cliente, weight="bold"),
+                align="start",
+            ),
+            rx.vstack(
+                rx.text("Telefone", color="#718078", size="2"),
+                rx.text(ClienteAuthState.telefone_cliente, weight="bold"),
+                align="start",
+            ),
+            rx.vstack(
+                rx.text("E-mail", color="#718078", size="2"),
+                rx.text(ClienteAuthState.email_cliente, weight="bold"),
+                align="start",
+            ),
+            columns="repeat(auto-fit, minmax(180px, 1fr))",
+            spacing="4",
+            width="100%",
+        ),
+        width="100%",
+        align="start",
+        class_name="pettech-card",
+        padding="24px",
+    )
+    pets = rx.vstack(
+        rx.heading("Seus Pets", size="5"),
+        rx.cond(
+            ClienteAuthState.carregando_dashboard,
+            rx.text("Carregando seus Pets..."),
+            rx.vstack(
+                rx.cond(
+                    ClienteAuthState.pets_cliente,
+                    rx.grid(
+                        rx.foreach(
+                            ClienteAuthState.pets_cliente,
+                            lambda pet: rx.vstack(
+                                rx.heading(pet["nome"], size="4"),
+                                rx.text(f"Espécie: {pet['especie']}"),
+                                rx.text(f"Raça: {pet['raca']}"),
+                                rx.text(f"Porte: {pet['porte']}"),
+                                align="start",
+                                width="100%",
+                                class_name="pettech-card",
+                                padding="16px",
+                            ),
+                        ),
+                        columns="repeat(auto-fit, minmax(220px, 1fr))",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    rx.text("Você ainda não possui Pets cadastrados."),
+                ),
+                rx.button(
+                    rx.cond(
+                        ClienteAuthState.formulario_pet_cliente_aberto,
+                        "Fechar cadastro de Pet",
+                        rx.cond(
+                            ClienteAuthState.pets_cliente,
+                            "Cadastrar outro Pet",
+                            "Cadastrar primeiro Pet",
+                        ),
+                    ),
+                    on_click=ClienteAuthState.alternar_formulario_pet_cliente,
+                    disabled=ClienteAuthState.processando_pet_cliente,
+                ),
+                rx.cond(
+                    ClienteAuthState.formulario_pet_cliente_aberto,
+                    formulario_pet_cliente(),
+                ),
+                rx.cond(
+                    ClienteAuthState.mensagem_pet_cliente
+                    & ~ClienteAuthState.formulario_pet_cliente_aberto,
+                    rx.text(
+                        ClienteAuthState.mensagem_pet_cliente,
+                        color=rx.cond(
+                            ClienteAuthState.sucesso_pet_cliente,
+                            "green",
+                            "red",
+                        ),
+                        size="2",
+                    ),
+                ),
+                width="100%",
+                spacing="3",
+            ),
+        ),
+        width="100%",
+        align="start",
+        class_name="pettech-card",
+        padding="24px",
+    )
+    agendamentos_ativos = rx.vstack(
+        rx.heading("Agendamentos ativos", size="5"),
+        rx.cond(
+            ClienteAuthState.carregando_dashboard,
+            rx.text("Carregando Agendamentos..."),
+            rx.vstack(
+                rx.cond(
+                    ClienteAuthState.agendamentos_ativos_cliente,
+                    rx.grid(
+                        rx.foreach(
+                            ClienteAuthState.agendamentos_ativos_cliente,
+                            lambda agendamento: rx.vstack(
+                                rx.heading(agendamento["servico_nome"], size="4"),
+                                rx.text(f"Pet: {agendamento['pet_nome']}"),
+                                rx.text(f"Data e hora: {agendamento['data_hora']}"),
+                                rx.text(f"Status: {agendamento['status']}"),
+                                align="start",
+                                width="100%",
+                                class_name="pettech-card",
+                                padding="16px",
+                            ),
+                        ),
+                        columns="repeat(auto-fit, minmax(220px, 1fr))",
+                        spacing="4",
+                        width="100%",
+                    ),
+                    rx.text("Você não possui Agendamentos ativos."),
+                ),
+                rx.button(
+                    rx.cond(
+                        ClienteAuthState.formulario_agendamento_cliente_aberto,
+                        "Fechar Agendamento",
+                        rx.cond(
+                            ClienteAuthState.agendamentos_ativos_cliente,
+                            "Agendar outro atendimento",
+                            "Agendar atendimento",
+                        ),
+                    ),
+                    on_click=ClienteAuthState.alternar_agendamento_cliente,
+                    disabled=ClienteAuthState.processando_agendamento_cliente,
+                ),
+                rx.cond(
+                    ClienteAuthState.formulario_agendamento_cliente_aberto,
+                    formulario_agendamento_cliente(),
+                ),
+                rx.cond(
+                    ClienteAuthState.erro_agendamento_cliente
+                    & ~ClienteAuthState.formulario_agendamento_cliente_aberto,
+                    rx.text(
+                        ClienteAuthState.erro_agendamento_cliente,
+                        color="red",
+                        size="2",
+                    ),
+                ),
+                rx.cond(
+                    ClienteAuthState.mensagem_agendamento_cliente
+                    & ~ClienteAuthState.formulario_agendamento_cliente_aberto,
+                    rx.text(
+                        ClienteAuthState.mensagem_agendamento_cliente,
+                        color=rx.cond(
+                            ClienteAuthState.sucesso_agendamento_cliente,
+                            "green",
+                            "blue",
+                        ),
+                        size="2",
+                    ),
+                ),
+                width="100%",
+                spacing="3",
+            ),
+        ),
+        width="100%",
+        align="start",
+        class_name="pettech-card",
+        padding="24px",
+    )
+    agendamentos_historico = rx.vstack(
+        rx.heading("Histórico de Agendamentos", size="5"),
+        rx.cond(
+            ClienteAuthState.agendamentos_historico_cliente,
+            rx.grid(
+                rx.foreach(
+                    ClienteAuthState.agendamentos_historico_cliente,
+                    lambda agendamento: rx.vstack(
+                        rx.heading(agendamento["servico_nome"], size="4"),
+                        rx.text(f"Pet: {agendamento['pet_nome']}"),
+                        rx.text(f"Data e hora: {agendamento['data_hora']}"),
+                        rx.text(f"Status: {agendamento['status']}"),
+                        align="start",
+                        width="100%",
+                        class_name="pettech-card",
+                        padding="16px",
+                    ),
+                ),
+                columns="repeat(auto-fit, minmax(220px, 1fr))",
+                spacing="4",
+                width="100%",
+            ),
+            rx.text("Você ainda não possui Agendamentos no histórico."),
+        ),
+        width="100%",
+        align="start",
+        class_name="pettech-card",
+        padding="24px",
+    )
+
     return rx.container(
         rx.color_mode.button(position="top-right"),
         rx.vstack(
-            rx.heading("Área do cliente", size="8"),
-            rx.text(
-                ClienteAuthState.nome_cliente,
-                weight="bold",
-                size="5",
+            rx.hstack(
+                rx.vstack(
+                    rx.heading("Meu dashboard", size="8"),
+                    rx.text(
+                        f"Olá, {ClienteAuthState.nome_cliente}",
+                        size="4",
+                    ),
+                    align="start",
+                    spacing="1",
+                ),
+                rx.spacer(),
+                rx.button("Sair", on_click=ClienteAuthState.sair),
+                width="100%",
+                align="center",
+                wrap="wrap",
             ),
             rx.cond(
-                ClienteAuthState.mensagem,
-                rx.text(
+                ClienteAuthState.carregando_dashboard,
+                rx.text("Carregando seus dados..."),
+                rx.cond(
                     ClienteAuthState.mensagem,
-                    color="red",
-                    size="2",
+                    rx.text(
+                        ClienteAuthState.mensagem,
+                        color="red",
+                        size="2",
+                    ),
+                    rx.vstack(
+                        dados_cadastrais,
+                        pets,
+                        agendamentos_ativos,
+                        agendamentos_historico,
+                        width="100%",
+                        align="stretch",
+                        spacing="5",
+                    ),
                 ),
             ),
-            rx.button("Sair", on_click=ClienteAuthState.sair),
             spacing="4",
-            justify="center",
-            min_height="85vh",
-            align="center",
+            width="100%",
+            max_width="1100px",
+            margin="0 auto",
+            padding="32px 16px",
+            align="stretch",
         ),
+        max_width="1200px",
+        width="100%",
     )
 
 
