@@ -1,0 +1,82 @@
+:root {
+  color-scheme: light;
+  --color-primary: #52796f;
+  --color-primary-hover: #3e6259;
+  --color-secondary: #e7906d;
+  --color-secondary-hover: #cf7653;
+  --color-background: #fbf8f3;
+  --color-surface: #ffffff;
+  --color-text: #26352f;
+  --color-text-muted: #718078;
+  --color-border: #e7e1d8;
+  --color-focus: #e7906d;
+  --shadow-card: 0 12px 30px rgba(38, 53, 47, 0.08);
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  background-color: var(--color-background);
+  color: var(--color-text);
+  font-family: "Nunito Sans", sans-serif;
+}
+
+.pettech-card {
+  border: 1px solid var(--color-border) !important;
+  border-radius: 18px !important;
+  background-color: var(--color-surface);
+  box-shadow: var(--shadow-card);
+}
+
+button {
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+button:hover:not(:disabled):not([data-variant="outline"]) {
+  background-color: var(--color-primary-hover);
+  box-shadow: 0 7px 16px rgba(38, 53, 47, 0.14);
+  transform: translateY(-1px);
+}
+
+button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+input,
+textarea {
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible,
+button:focus-visible,
+a:focus-visible {
+  outline: 3px solid rgba(231, 144, 109, 0.5);
+  outline-offset: 2px;
+}
+
+a {
+  text-underline-offset: 3px;
+  transition: color 160ms ease;
+}
+
+a:hover {
+  color: var(--color-primary-hover);
+}
+
+@media (max-width: 640px) {
+  .pettech-card {
+    border-radius: 16px !important;
+  }
+}

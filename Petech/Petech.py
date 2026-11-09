@@ -570,6 +570,7 @@ def login() -> rx.Component:
                 ),
                 width="400px",
                 padding="20px",
+                class_name="pettech-card",
                 border="1px solid #ddd",
                 border_radius="10px",
                 spacing="3",
@@ -697,6 +698,7 @@ def index() -> rx.Component:
                 ),
                 width="400px",
                 padding="20px",
+                class_name="pettech-card",
                 border="1px solid #ddd",
                 border_radius="10px",
                 spacing="3",
@@ -793,6 +795,7 @@ def index() -> rx.Component:
                                 wrap="wrap",
                                 width="100%",
                                 padding="12px",
+                                class_name="pettech-card",
                                 border="1px solid #ddd",
                                 border_radius="8px",
                             ),
@@ -1568,6 +1571,7 @@ def cadastro_pet() -> rx.Component:
                     width="100%",
                     max_width="600px",
                     padding="20px",
+                    class_name="pettech-card",
                     border="1px solid #ddd",
                     border_radius="10px",
                     spacing="3",
@@ -1644,6 +1648,7 @@ def cadastro_pet() -> rx.Component:
                 ),
                 width="400px",
                 padding="20px",
+                class_name="pettech-card",
                 border="1px solid #ddd",
                 border_radius="10px",
                 spacing="3",
@@ -1772,6 +1777,7 @@ def cadastro_pet() -> rx.Component:
                                 wrap="wrap",
                                 width="100%",
                                 padding="12px",
+                                class_name="pettech-card",
                                 border="1px solid #ddd",
                                 border_radius="8px",
                             ),
@@ -3235,6 +3241,7 @@ def fluxo_agendamento() -> rx.Component:
                     width="100%",
                     max_width="600px",
                     padding="20px",
+                    class_name="pettech-card",
                     border="1px solid #ddd",
                     border_radius="10px",
                     spacing="3",
@@ -3308,6 +3315,7 @@ def lista_agendamentos() -> rx.Component:
                         align="center",
                         width="100%",
                     ),
+                    class_name="pettech-card",
                     border="1px solid #ddd",
                     border_radius="10px",
                     padding="16px",
@@ -3364,6 +3372,7 @@ def lista_agendamentos() -> rx.Component:
                     ),
                     align="start",
                     width="100%",
+                    class_name="pettech-card",
                     border="1px solid #aaa",
                     border_radius="10px",
                     padding="20px",
@@ -3453,6 +3462,7 @@ def cadastro_servico() -> rx.Component:
                     width="100%",
                     max_width="600px",
                     padding="20px",
+                    class_name="pettech-card",
                     border="1px solid #ddd",
                     border_radius="10px",
                     spacing="3",
@@ -3510,6 +3520,7 @@ def cadastro_servico() -> rx.Component:
                 ),
                 width="400px",
                 padding="20px",
+                class_name="pettech-card",
                 border="1px solid #ddd",
                 border_radius="10px",
                 spacing="3",
@@ -3631,6 +3642,7 @@ def cadastro_servico() -> rx.Component:
                                 wrap="wrap",
                                 width="100%",
                                 padding="12px",
+                                class_name="pettech-card",
                                 border="1px solid #ddd",
                                 border_radius="8px",
                             ),
@@ -3665,7 +3677,57 @@ def cadastro_servico() -> rx.Component:
     )
 
 
-app = rx.App()
+app = rx.App(
+    stylesheets=[
+        "https://fonts.googleapis.com/css2?family=Nunito+Sans:wght@400;500;600;700;800&family=Poppins:wght@500;600;700&display=swap",
+        "/pettech.css",
+    ],
+    style={
+        rx.container: {
+            "max_width": "1120px",
+            "padding": "32px 24px",
+        },
+        rx.heading: {
+            "font_family": "Poppins, sans-serif",
+            "color": "#26352F",
+            "font_weight": "600",
+            "letter_spacing": "-0.02em",
+        },
+        rx.text: {
+            "font_family": "Nunito Sans, sans-serif",
+            "color": "#40514B",
+            "line_height": "1.6",
+        },
+        rx.button: {
+            "border_radius": "12px",
+            "font_family": "Nunito Sans, sans-serif",
+            "font_weight": "700",
+            "box_shadow": "0 4px 12px rgba(38, 53, 47, 0.10)",
+            "transition": "all 160ms ease",
+        },
+        rx.input: {
+            "border_color": "#D9E1DC",
+            "border_radius": "12px",
+            "background_color": "#FFFFFF",
+            "font_family": "Nunito Sans, sans-serif",
+        },
+        rx.text_area: {
+            "border_color": "#D9E1DC",
+            "border_radius": "12px",
+            "background_color": "#FFFFFF",
+            "font_family": "Nunito Sans, sans-serif",
+        },
+        rx.link: {
+            "color": "#52796F",
+            "font_family": "Nunito Sans, sans-serif",
+            "font_weight": "700",
+        },
+        "::selection": {
+            "background_color": "#DCE9E2",
+            "color": "#26352F",
+        },
+    },
+)
 app.add_page(login, route="/")
 app.add_page(
     index,
