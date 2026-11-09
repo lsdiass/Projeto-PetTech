@@ -1649,7 +1649,7 @@ def login() -> rx.Component:
                     color="orange",
                     size="2",
                 ),
-                rx.link("Acesso do cliente", href="/cliente"),
+                rx.link("Acesso do cliente", href="/"),
                 width="400px",
                 padding="20px",
                 class_name="pettech-card",
@@ -1671,7 +1671,7 @@ def cliente_login() -> rx.Component:
         rx.vstack(
             rx.heading("Área do cliente", size="8"),
             rx.text("Entre com sua conta PetTech.", size="3"),
-            rx.link("Voltar à página inicial", href="/"),
+            rx.link("Acesso administrativo", href="/admin/login"),
             rx.vstack(
                 rx.text("E-mail:"),
                 rx.input(
@@ -2286,10 +2286,63 @@ def inicio_cliente() -> rx.Component:
     )
 
 
+def navegacao_admin(secao_ativa: str) -> rx.Component:
+    secoes = [
+        ("Tutores", "/tutores", "tutores"),
+        ("Pets", "/pets", "pets"),
+        ("Serviços", "/servicos", "servicos"),
+        ("Novo agendamento", "/agendamentos", "agendamentos"),
+        ("Histórico", "/agendamentos/lista", "historico"),
+    ]
+    links = [
+        rx.link(
+            rotulo,
+            href=rota,
+            class_name=(
+                "admin-nav-link admin-nav-link-active"
+                if chave == secao_ativa
+                else "admin-nav-link"
+            ),
+        )
+        for rotulo, rota, chave in secoes
+    ]
+
+    return rx.hstack(
+        rx.link(
+            rx.vstack(
+                rx.text("PetTech", class_name="admin-brand-name"),
+                rx.text("PAINEL ADMINISTRATIVO", class_name="admin-brand-label"),
+                spacing="0",
+                align="start",
+            ),
+            href="/tutores",
+            class_name="admin-brand",
+        ),
+        rx.hstack(
+            *links,
+            class_name="admin-nav-links",
+            spacing="2",
+            wrap="wrap",
+        ),
+        rx.link(
+            "Área do cliente",
+            href="/",
+            class_name="admin-client-link",
+        ),
+        class_name="admin-toolbar",
+        width="100%",
+        justify="between",
+        align="center",
+        wrap="wrap",
+        spacing="4",
+    )
+
+
 def index() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
         rx.vstack(
+            navegacao_admin("tutores"),
             rx.heading("Cadastro de Tutor", size="8"),
             rx.text(
                 rx.cond(
@@ -2299,12 +2352,6 @@ def index() -> rx.Component:
                 ),
                 size="3",
             ),
-            rx.link("Página inicial", href="/"),
-            rx.link("Cadastrar Pet", href="/pets"),
-            rx.link("Cadastrar Serviço", href="/servicos"),
-            rx.link("Agendar atendimento", href="/agendamentos"),
-            rx.link("Consultar agendamentos", href="/agendamentos/lista"),
-            
             rx.vstack(
                 rx.cond(
                     TutorState.editando,
@@ -3195,13 +3242,9 @@ def cadastro_pet() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
         rx.vstack(
+            navegacao_admin("pets"),
             rx.heading("Cadastro de Pet", size="8"),
             rx.text("Preencha os dados do pet e selecione seu tutor responsável.", size="3"),
-            rx.link("Voltar ao cadastro de tutor", href="/tutores"),
-            rx.link("Cadastrar Serviço", href="/servicos"),
-            rx.link("Agendar atendimento", href="/agendamentos"),
-            rx.link("Consultar agendamentos", href="/agendamentos/lista"),
-            rx.link("Página inicial", href="/"),
             rx.cond(
                 PetState.editando,
                 rx.vstack(
@@ -4808,18 +4851,11 @@ def fluxo_agendamento() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
         rx.vstack(
+            navegacao_admin("agendamentos"),
             rx.heading("Novo Agendamento", size="8"),
             rx.text(
                 "Selecione um Pet, um Serviço, o dia e um horário disponível.",
                 size="3",
-            ),
-            rx.hstack(
-                rx.link("Cadastro de Tutor", href="/tutores"),
-                rx.link("Cadastro de Pet", href="/pets"),
-                rx.link("Cadastro de Serviço", href="/servicos"),
-                rx.link("Consultar agendamentos", href="/agendamentos/lista"),
-                spacing="4",
-                wrap="wrap",
             ),
             rx.cond(
                 AgendamentoState.carregando_dados,
@@ -4963,14 +4999,13 @@ def lista_agendamentos() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
         rx.vstack(
+            navegacao_admin("historico"),
             rx.heading("Agendamentos", size="8"),
             rx.text(
                 "Consulte os atendimentos cadastrados e seus vínculos.",
                 size="3",
             ),
             rx.hstack(
-                rx.link("Novo agendamento", href="/agendamentos"),
-                rx.link("Cadastro de tutor", href="/tutores"),
                 rx.button(
                     "Atualizar lista",
                     on_click=ListaAgendamentosState.carregar_agendamentos,
@@ -5097,13 +5132,9 @@ def cadastro_servico() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
         rx.vstack(
+            navegacao_admin("servicos"),
             rx.heading("Cadastro de Serviço", size="8"),
             rx.text("Cadastre um serviço oferecido pelo estabelecimento.", size="3"),
-            rx.link("Voltar ao cadastro de tutor", href="/tutores"),
-            rx.link("Ir para cadastro de pet", href="/pets"),
-            rx.link("Agendar atendimento", href="/agendamentos"),
-            rx.link("Consultar agendamentos", href="/agendamentos/lista"),
-            rx.link("Página inicial", href="/"),
             rx.cond(
                 ServicoState.editando,
                 rx.vstack(
@@ -5431,7 +5462,8 @@ app = rx.App(
         },
     },
 )
-app.add_page(login, route="/")
+app.add_page(cliente_login, route="/")
+app.add_page(login, route="/admin/login")
 app.add_page(cliente_login, route="/cliente")
 app.add_page(cadastro_cliente, route="/cliente/cadastro")
 app.add_page(

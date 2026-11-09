@@ -32,6 +32,81 @@ body {
   box-shadow: var(--shadow-card);
 }
 
+.admin-toolbar {
+  position: relative;
+  z-index: 1;
+  padding: 18px 22px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  background: linear-gradient(115deg, #263f36, #35584c);
+  box-shadow: 0 14px 32px rgba(38, 53, 47, 0.16);
+}
+
+.admin-brand {
+  color: #ffffff !important;
+  text-decoration: none;
+}
+
+.admin-brand-name {
+  color: #ffffff !important;
+  font-family: "Poppins", sans-serif;
+  font-size: 1.15rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.admin-brand-label {
+  color: rgba(255, 255, 255, 0.68) !important;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+}
+
+.admin-nav-links {
+  flex: 1;
+  justify-content: center;
+}
+
+.admin-nav-link,
+.admin-client-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  padding: 8px 13px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.82) !important;
+  font-size: 0.9rem;
+  font-weight: 700;
+  text-decoration: none;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    color 160ms ease;
+}
+
+.admin-nav-link:hover,
+.admin-client-link:hover {
+  border-color: rgba(255, 255, 255, 0.18);
+  background-color: rgba(255, 255, 255, 0.1);
+  color: #ffffff !important;
+}
+
+.admin-nav-link-active {
+  background-color: #ffffff;
+  color: #29483d !important;
+}
+
+.admin-nav-link-active:hover {
+  background-color: #edf4ef;
+  color: #29483d !important;
+}
+
+.admin-client-link {
+  border-color: rgba(255, 255, 255, 0.28);
+  color: #ffffff !important;
+}
+
 button {
   cursor: pointer;
   transition:
@@ -78,5 +153,21 @@ a:hover {
 @media (max-width: 640px) {
   .pettech-card {
     border-radius: 16px !important;
+  }
+
+  .admin-toolbar {
+    align-items: flex-start;
+    padding: 16px;
+  }
+
+  .admin-nav-links {
+    flex-basis: 100%;
+    justify-content: flex-start;
+  }
+
+  .admin-nav-link,
+  .admin-client-link {
+    padding: 7px 10px;
+    font-size: 0.82rem;
   }
 }
