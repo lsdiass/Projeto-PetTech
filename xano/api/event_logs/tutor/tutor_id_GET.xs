@@ -18,6 +18,11 @@ query "tutor/{tutor_id}" verb=GET {
     }
   }
 
-  response = $tutor
+  response = {
+    id: $tutor.id,
+    nome: $tutor.nome,
+    email: $tutor.email,
+    telefone: $tutor.telefone
+  }
   guid = "vI1MtspUJ1kgJ72AAJUxx4dUPSU"
 }

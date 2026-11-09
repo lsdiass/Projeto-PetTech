@@ -16,6 +16,7 @@ O domínio da aplicação engloba o ciclo de vida operacional do atendimento em 
   - `cpf`: Registro de Pessoa Física para identificação única.
   - `telefone`: Número principal para contato e envio de notificações/confirmações.
   - `email`: Endereço eletrônico para envio de comprovantes e comunicação.
+  - `password`: Credencial gerenciada pelo Xano e armazenada somente como hash; nunca deve ser retornada por endpoints.
 - **Relacionamentos:**
   - Um **Tutor** possui **1 para N** com **Pet** (um tutor pode ter um ou vários pets cadastrados, mas cada pet pertence a exatamente um tutor).
 

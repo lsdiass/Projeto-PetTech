@@ -526,6 +526,265 @@ class LoginDemoState(rx.State):
         self.mensagem = "E-mail ou senha demonstrativos inválidos."
 
 
+class ClienteAuthState(rx.State):
+    nome: str = ""
+    cpf: str = ""
+    telefone: str = ""
+    email: str = ""
+    senha: str = ""
+    confirmar_senha: str = ""
+    mensagem: str = ""
+    processando: bool = False
+    nome_cliente: str = ""
+    _auth_token: str = ""
+    _tutor_id: str = ""
+
+    def set_nome(self, nome: str):
+        self.nome = nome
+
+    def set_cpf(self, cpf: str):
+        self.cpf = cpf
+
+    def set_telefone(self, telefone: str):
+        self.telefone = telefone
+
+    def set_email(self, email: str):
+        self.email = email
+
+    def set_senha(self, senha: str):
+        self.senha = senha
+
+    def set_confirmar_senha(self, senha: str):
+        self.confirmar_senha = senha
+
+    def _mensagem_erro_http(
+        self,
+        error: httpx.HTTPStatusError,
+        contexto: str,
+    ) -> str:
+        try:
+            dados_erro = error.response.json()
+        except ValueError:
+            dados_erro = None
+
+        mensagem = (
+            dados_erro.get("message")
+            if isinstance(dados_erro, dict)
+            else None
+        )
+        if (
+            error.response.status_code == 404
+            and mensagem == "Unable to locate request."
+        ):
+            return (
+                f"{contexto}: o endpoint de conta do cliente ainda não foi "
+                "publicado no Xano. Publique os scripts da change e tente novamente."
+            )
+        if not isinstance(mensagem, str) or not mensagem.strip():
+            mensagem = error.response.text.strip()
+        if not mensagem:
+            mensagem = f"HTTP {error.response.status_code}"
+        return f"{contexto}: {mensagem}"
+
+    def _processar_resposta_autenticacao(self, dados: object) -> bool:
+        if not isinstance(dados, dict):
+            return False
+
+        token = dados.get("authToken")
+        tutor = dados.get("tutor")
+        if (
+            not isinstance(token, str)
+            or not token
+            or not isinstance(tutor, dict)
+            or normalizar_id(tutor.get("id")) is None
+            or not isinstance(tutor.get("nome"), str)
+            or not tutor["nome"].strip()
+        ):
+            return False
+
+        self._auth_token = token
+        self._tutor_id = normalizar_id(tutor.get("id")) or ""
+        self.nome_cliente = tutor["nome"]
+        return True
+
+    def entrar(self):
+        email = self.email.strip().lower()
+        if not email or not self.senha:
+            self.mensagem = "Informe seu e-mail e sua senha."
+            return
+
+        self.processando = True
+        self.mensagem = "Validando acesso..."
+        self._auth_token = ""
+        self._tutor_id = ""
+        self.nome_cliente = ""
+
+        try:
+            response = httpx.post(
+                f"{XANO_API_URL}/cliente/login",
+                json={"email": email, "senha": self.senha},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            dados = response.json()
+        except httpx.HTTPStatusError as error:
+            self.senha = ""
+            self.mensagem = self._mensagem_erro_http(
+                error,
+                "Não foi possível entrar",
+            )
+        except httpx.RequestError as error:
+            self.senha = ""
+            self.mensagem = f"Erro de conexão com o Xano: {error}"
+        except ValueError:
+            self.senha = ""
+            self.mensagem = "O Xano retornou uma resposta de login inválida."
+        else:
+            self.senha = ""
+            if not self._processar_resposta_autenticacao(dados):
+                self.mensagem = "O Xano não confirmou a autenticação."
+            else:
+                self.email = email
+                self.mensagem = ""
+                return rx.redirect("/cliente/inicio")
+        finally:
+            self.processando = False
+
+    def cadastrar(self):
+        nome = self.nome.strip()
+        cpf = self.cpf.strip()
+        telefone = self.telefone.strip()
+        email = self.email.strip().lower()
+        if not nome or not cpf or not telefone or not email or not self.senha:
+            self.mensagem = "Preencha todos os campos."
+            return
+        if len(self.senha) < 8:
+            self.mensagem = "A senha deve ter pelo menos 8 caracteres."
+            return
+        if self.senha != self.confirmar_senha:
+            self.mensagem = "A confirmação de senha não corresponde."
+            return
+
+        self.processando = True
+        self.mensagem = "Criando sua conta..."
+        self._auth_token = ""
+        self._tutor_id = ""
+        self.nome_cliente = ""
+
+        try:
+            response = httpx.post(
+                f"{XANO_API_URL}/cliente/cadastro",
+                json={
+                    "nome": nome,
+                    "cpf": cpf,
+                    "telefone": telefone,
+                    "email": email,
+                    "senha": self.senha,
+                },
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            dados = response.json()
+        except httpx.HTTPStatusError as error:
+            self.senha = ""
+            self.confirmar_senha = ""
+            self.mensagem = self._mensagem_erro_http(
+                error,
+                "Não foi possível criar a conta",
+            )
+        except httpx.RequestError as error:
+            self.senha = ""
+            self.confirmar_senha = ""
+            self.mensagem = f"Erro de conexão com o Xano: {error}"
+        except ValueError:
+            self.senha = ""
+            self.confirmar_senha = ""
+            self.mensagem = "O Xano retornou uma resposta de cadastro inválida."
+        else:
+            self.senha = ""
+            self.confirmar_senha = ""
+            if not self._processar_resposta_autenticacao(dados):
+                self.mensagem = "O Xano não confirmou a criação da conta."
+            else:
+                self.nome = nome
+                self.cpf = ""
+                self.telefone = telefone
+                self.email = email
+                self.mensagem = ""
+                return rx.redirect("/cliente/inicio")
+        finally:
+            self.processando = False
+
+    def carregar_conta(self):
+        if not self._auth_token or not self._tutor_id:
+            return rx.redirect("/cliente")
+
+        self.mensagem = "Validando sua sessão..."
+        try:
+            response = httpx.get(
+                f"{XANO_API_URL}/cliente/sessao/perfil",
+                headers={"Authorization": f"Bearer {self._auth_token}"},
+                timeout=10.0,
+            )
+            response.raise_for_status()
+            tutor = response.json()
+        except httpx.HTTPStatusError as error:
+            if error.response.status_code in (401, 403):
+                self.mensagem = "Sua sessão expirou. Entre novamente."
+            else:
+                self.mensagem = self._mensagem_erro_http(
+                    error,
+                    "Não foi possível carregar sua conta",
+                )
+            self._auth_token = ""
+            self._tutor_id = ""
+            self.nome_cliente = ""
+            return rx.redirect("/cliente")
+        except httpx.RequestError as error:
+            self.mensagem = f"Erro de conexão ao validar sua sessão: {error}"
+            self._auth_token = ""
+            self._tutor_id = ""
+            self.nome_cliente = ""
+            return rx.redirect("/cliente")
+        except ValueError:
+            self.mensagem = "O Xano retornou os dados da conta em formato inválido."
+            self._auth_token = ""
+            self._tutor_id = ""
+            self.nome_cliente = ""
+            return rx.redirect("/cliente")
+        else:
+            tutor_id = (
+                normalizar_id(tutor.get("id"))
+                if isinstance(tutor, dict)
+                else None
+            )
+            if (
+                tutor_id != self._tutor_id
+                or not isinstance(tutor, dict)
+                or not isinstance(tutor.get("nome"), str)
+                or not tutor["nome"].strip()
+            ):
+                self.mensagem = "O Xano não confirmou os dados da sua conta."
+                self._auth_token = ""
+                self._tutor_id = ""
+                self.nome_cliente = ""
+                return rx.redirect("/cliente")
+            self.nome_cliente = tutor["nome"]
+            email = tutor.get("email")
+            if isinstance(email, str):
+                self.email = email
+            self.mensagem = ""
+
+    def sair(self):
+        self._auth_token = ""
+        self._tutor_id = ""
+        self.nome_cliente = ""
+        self.senha = ""
+        self.confirmar_senha = ""
+        self.mensagem = ""
+        return rx.redirect("/cliente")
+
+
 def login() -> rx.Component:
     return rx.container(
         rx.color_mode.button(position="top-right"),
@@ -568,6 +827,7 @@ def login() -> rx.Component:
                     color="orange",
                     size="2",
                 ),
+                rx.link("Acesso do cliente", href="/cliente"),
                 width="400px",
                 padding="20px",
                 class_name="pettech-card",
@@ -576,6 +836,170 @@ def login() -> rx.Component:
                 spacing="3",
             ),
             spacing="5",
+            justify="center",
+            min_height="85vh",
+            align="center",
+        ),
+    )
+
+
+def cliente_login() -> rx.Component:
+    return rx.container(
+        rx.color_mode.button(position="top-right"),
+        rx.vstack(
+            rx.heading("Área do cliente", size="8"),
+            rx.text("Entre com sua conta PetTech.", size="3"),
+            rx.link("Voltar à página inicial", href="/"),
+            rx.vstack(
+                rx.text("E-mail:"),
+                rx.input(
+                    placeholder="email@exemplo.com",
+                    type="email",
+                    on_change=ClienteAuthState.set_email,
+                    value=ClienteAuthState.email,
+                    width="100%",
+                ),
+                rx.text("Senha:"),
+                rx.input(
+                    placeholder="Sua senha",
+                    type="password",
+                    on_change=ClienteAuthState.set_senha,
+                    value=ClienteAuthState.senha,
+                    width="100%",
+                ),
+                rx.button(
+                    "Entrar",
+                    on_click=ClienteAuthState.entrar,
+                    loading=ClienteAuthState.processando,
+                    width="100%",
+                    margin_top="10px",
+                ),
+                rx.cond(
+                    ClienteAuthState.mensagem,
+                    rx.text(
+                        ClienteAuthState.mensagem,
+                        color="red",
+                        size="2",
+                    ),
+                ),
+                rx.link("Ainda não tenho conta. Cadastrar", href="/cliente/cadastro"),
+                width="100%",
+                max_width="420px",
+                padding="20px",
+                class_name="pettech-card",
+                spacing="3",
+            ),
+            spacing="5",
+            justify="center",
+            min_height="85vh",
+            align="center",
+        ),
+    )
+
+
+def cadastro_cliente() -> rx.Component:
+    return rx.container(
+        rx.color_mode.button(position="top-right"),
+        rx.vstack(
+            rx.heading("Criar conta de cliente", size="8"),
+            rx.text("Preencha seus dados para acessar a área do cliente.", size="3"),
+            rx.link("Já tenho conta", href="/cliente"),
+            rx.vstack(
+                rx.text("Nome completo:"),
+                rx.input(
+                    placeholder="Digite seu nome completo",
+                    on_change=ClienteAuthState.set_nome,
+                    value=ClienteAuthState.nome,
+                    width="100%",
+                ),
+                rx.text("CPF:"),
+                rx.input(
+                    placeholder="000.000.000-00",
+                    on_change=ClienteAuthState.set_cpf,
+                    value=ClienteAuthState.cpf,
+                    width="100%",
+                ),
+                rx.text("Telefone:"),
+                rx.input(
+                    placeholder="(00) 00000-0000",
+                    type="tel",
+                    on_change=ClienteAuthState.set_telefone,
+                    value=ClienteAuthState.telefone,
+                    width="100%",
+                ),
+                rx.text("E-mail:"),
+                rx.input(
+                    placeholder="email@exemplo.com",
+                    type="email",
+                    on_change=ClienteAuthState.set_email,
+                    value=ClienteAuthState.email,
+                    width="100%",
+                ),
+                rx.text("Senha (mínimo de 8 caracteres):"),
+                rx.input(
+                    placeholder="Crie uma senha",
+                    type="password",
+                    on_change=ClienteAuthState.set_senha,
+                    value=ClienteAuthState.senha,
+                    width="100%",
+                ),
+                rx.text("Confirme sua senha:"),
+                rx.input(
+                    placeholder="Digite a senha novamente",
+                    type="password",
+                    on_change=ClienteAuthState.set_confirmar_senha,
+                    value=ClienteAuthState.confirmar_senha,
+                    width="100%",
+                ),
+                rx.button(
+                    "Criar conta",
+                    on_click=ClienteAuthState.cadastrar,
+                    loading=ClienteAuthState.processando,
+                    width="100%",
+                    margin_top="10px",
+                ),
+                rx.cond(
+                    ClienteAuthState.mensagem,
+                    rx.text(
+                        ClienteAuthState.mensagem,
+                        color="red",
+                        size="2",
+                    ),
+                ),
+                width="100%",
+                max_width="420px",
+                padding="20px",
+                class_name="pettech-card",
+                spacing="3",
+            ),
+            spacing="5",
+            justify="center",
+            min_height="85vh",
+            align="center",
+        ),
+    )
+
+
+def inicio_cliente() -> rx.Component:
+    return rx.container(
+        rx.color_mode.button(position="top-right"),
+        rx.vstack(
+            rx.heading("Área do cliente", size="8"),
+            rx.text(
+                ClienteAuthState.nome_cliente,
+                weight="bold",
+                size="5",
+            ),
+            rx.cond(
+                ClienteAuthState.mensagem,
+                rx.text(
+                    ClienteAuthState.mensagem,
+                    color="red",
+                    size="2",
+                ),
+            ),
+            rx.button("Sair", on_click=ClienteAuthState.sair),
+            spacing="4",
             justify="center",
             min_height="85vh",
             align="center",
@@ -3729,6 +4153,13 @@ app = rx.App(
     },
 )
 app.add_page(login, route="/")
+app.add_page(cliente_login, route="/cliente")
+app.add_page(cadastro_cliente, route="/cliente/cadastro")
+app.add_page(
+    inicio_cliente,
+    route="/cliente/inicio",
+    on_load=ClienteAuthState.carregar_conta,
+)
 app.add_page(
     index,
     route="/tutores",

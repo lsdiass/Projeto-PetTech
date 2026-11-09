@@ -1,11 +1,19 @@
 table tutor {
-  auth = false
+  auth = true
 
   schema {
     int id
     text nome
-    text? email?
+    text? cpf? {
+      sensitive = true
+    }
+    email? email? filters=trim|lower {
+      sensitive = true
+    }
     text? telefone?
+    password? password? {
+      sensitive = true
+    }
     timestamp created_at?=now {
       visibility = "private"
     }
@@ -13,6 +21,8 @@ table tutor {
 
   index = [
     {type: "primary", field: [{name: "id"}]}
+    {type: "btree|unique", field: [{name: "cpf"}]}
+    {type: "btree|unique", field: [{name: "email"}]}
     {type: "btree", field: [{name: "created_at", op: "desc"}]}
   ]
 

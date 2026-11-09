@@ -11,6 +11,6 @@ query tutor verb=GET {
     } as $tutor
   }
 
-  response = $tutor
+  response = $tutor|map:{id: $$.id, nome: $$.nome, email: $$.email, telefone: $$.telefone}
   guid = "FLbnSVNj9OGNX5J-B5aO45-j1mU"
 }

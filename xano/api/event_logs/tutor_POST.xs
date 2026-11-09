@@ -26,6 +26,11 @@ query "tutor" verb=POST {
     } as $tutor
   }
 
-  response = $tutor
+  response = {
+    id: $tutor.id,
+    nome: $tutor.nome,
+    email: $tutor.email,
+    telefone: $tutor.telefone
+  }
   guid = "3BxQ3_3fRohV0xn8ppFuQYluzGE"
 }

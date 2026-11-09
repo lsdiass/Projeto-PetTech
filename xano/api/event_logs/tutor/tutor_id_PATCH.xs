@@ -36,6 +36,11 @@ query "tutor/{tutor_id}" verb=PATCH {
     } as $tutor_atualizado
   }
 
-  response = $tutor_atualizado
+  response = {
+    id: $tutor_atualizado.id,
+    nome: $tutor_atualizado.nome,
+    email: $tutor_atualizado.email,
+    telefone: $tutor_atualizado.telefone
+  }
   guid = "7kD6dxaT-h4gFiAvkO1zEaQC9wk"
 }
